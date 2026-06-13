@@ -76,3 +76,20 @@ export function formatKnowledgeContext(query: string) {
   const sections = matches.map((item) => `[${item.title}]\n${item.content}`);
   return `Pengetahuan lokal yang relevan:\n${sections.join('\n\n')}\n\n`;
 }
+
+export function getKnowledgeContext(query: string) {
+  const matches = retrieveKnowledge(query);
+
+  if (!matches.length) {
+    return {
+      context: '',
+      matches: [],
+    };
+  }
+
+  const sections = matches.map((item) => `[${item.title}]\n${item.content}`);
+  return {
+    context: `Pengetahuan lokal yang relevan:\n${sections.join('\n\n')}\n\n`,
+    matches: matches.map((item) => item.id),
+  };
+}

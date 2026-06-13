@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
-import { formatKnowledgeContext } from './knowledge';
+import { getKnowledgeContext } from './knowledge';
+import { logEvent } from './observability';
 import { formatPreferenceInstruction, type UserPreferences } from './preferences';
 
 if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
@@ -18,6 +19,22 @@ const historyLimit = Number(process.env.CHAT_HISTORY_LIMIT || 10);
 export type ChatHistoryItem = {
   role: 'user' | 'bot';
   content: string;
+};
+
+export type IntentResult = {
+  intent: 'technical' | 'casual';
+  model: string;
+  latencyMs: number;
+  fallback: boolean;
+};
+
+export type GenerationResult = {
+  text: string;
+  model: string;
+  latencyMs: number;
+  knowledgeMatches: string[];
+  historyCount: number;
+  fallback: boolean;
 };
 
 const intentInstructions = `Determine the intent of the following user message for a Telegram bot named @CybraFeriBot.
@@ -59,6 +76,7 @@ function formatHistory(history: ChatHistoryItem[]) {
 }
 
 async function generateText(model: string, instructions: string, input: string) {
+  const startedAt = Date.now();
   const response = await client.models.generateContent({
     model,
     contents: input,
@@ -67,16 +85,30 @@ async function generateText(model: string, instructions: string, input: string) 
     },
   });
 
-  return response.text?.trim() || '';
+  return {
+    text: response.text?.trim() || '',
+    latencyMs: Date.now() - startedAt,
+  };
 }
 
-export async function getIntent(message: string) {
+export async function getIntent(message: string): Promise<IntentResult> {
   try {
     const result = await generateText(intentModel, intentInstructions, message);
-    return result.toLowerCase().includes('technical') ? 'technical' : 'casual';
+    const intent = result.text.toLowerCase().includes('technical') ? 'technical' : 'casual';
+    return {
+      intent,
+      model: intentModel,
+      latencyMs: result.latencyMs,
+      fallback: false,
+    };
   } catch (error) {
-    console.error('AI Intent Error:', error);
-    return 'casual';
+    logEvent('ai.intent_error', { model: intentModel, error: String(error) }, 'error');
+    return {
+      intent: 'casual',
+      model: intentModel,
+      latencyMs: 0,
+      fallback: true,
+    };
   }
 }
 
@@ -84,16 +116,32 @@ export async function generateResponse(
   message: string,
   history: ChatHistoryItem[] = [],
   preferences: UserPreferences = {}
-) {
+): Promise<GenerationResult> {
+  const knowledge = getKnowledgeContext(message);
   try {
-    return await generateText(
+    const result = await generateText(
       chatModel,
       casualInstructions,
-      `${formatPreferenceInstruction(preferences)}${formatKnowledgeContext(message)}${formatHistory(history)}Pesan terbaru user:\n${message}`
+      `${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Pesan terbaru user:\n${message}`
     );
+    return {
+      text: result.text,
+      model: chatModel,
+      latencyMs: result.latencyMs,
+      knowledgeMatches: knowledge.matches,
+      historyCount: history.length,
+      fallback: false,
+    };
   } catch (error: any) {
-    console.error('AI Generation Error:', error?.message || error);
-    return 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!';
+    logEvent('ai.generation_error', { model: chatModel, error: error?.message || String(error) }, 'error');
+    return {
+      text: 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!',
+      model: chatModel,
+      latencyMs: 0,
+      knowledgeMatches: knowledge.matches,
+      historyCount: history.length,
+      fallback: true,
+    };
   }
 }
 
@@ -101,15 +149,31 @@ export async function generateTechnicalResponse(
   message: string,
   history: ChatHistoryItem[] = [],
   preferences: UserPreferences = {}
-) {
+): Promise<GenerationResult> {
+  const knowledge = getKnowledgeContext(message);
   try {
-    return await generateText(
+    const result = await generateText(
       chatModel,
       technicalInstructions,
-      `${formatPreferenceInstruction(preferences)}${formatKnowledgeContext(message)}${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
+      `${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
     );
+    return {
+      text: result.text,
+      model: chatModel,
+      latencyMs: result.latencyMs,
+      knowledgeMatches: knowledge.matches,
+      historyCount: history.length,
+      fallback: false,
+    };
   } catch (error: any) {
-    console.error('AI Generation Error:', error?.message || error);
-    return 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!';
+    logEvent('ai.generation_error', { model: chatModel, error: error?.message || String(error) }, 'error');
+    return {
+      text: 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!',
+      model: chatModel,
+      latencyMs: 0,
+      knowledgeMatches: knowledge.matches,
+      historyCount: history.length,
+      fallback: true,
+    };
   }
 }

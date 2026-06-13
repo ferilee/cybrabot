@@ -4,6 +4,7 @@ type ToolResult = {
   handled: boolean;
   response?: string;
   toolName?: string;
+  metadata?: Record<string, unknown>;
 };
 
 function cleanExpression(input: string) {
@@ -42,6 +43,10 @@ function tryMathTool(text: string): ToolResult {
       handled: true,
       toolName: 'math',
       response: `<b>Hasil perhitungan:</b> ${result}`,
+      metadata: {
+        expression,
+        result,
+      },
     };
   } catch {
     return { handled: false };
@@ -87,6 +92,9 @@ Terima kasih kepada semua pihak yang sudah berkontribusi. Semoga kegiatan ini me
     handled: true,
     toolName: 'caption',
     response,
+    metadata: {
+      topic,
+    },
   };
 }
 
@@ -126,6 +134,9 @@ Tim Sekolah`;
     handled: true,
     toolName: 'announcement',
     response,
+    metadata: {
+      topic,
+    },
   };
 }
 
@@ -156,6 +167,9 @@ function tryFaqTool(text: string): ToolResult {
     handled: true,
     toolName: 'faq',
     response: `<b>${topMatch.title}</b>\n\n${topMatch.content}`,
+    metadata: {
+      knowledgeId: topMatch.id,
+    },
   };
 }
 
