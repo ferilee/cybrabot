@@ -175,6 +175,7 @@ Alur pakainya:
 3. Tanya isi dokumen dengan salah satu format:
    - `dokumen: apa kesimpulan utamanya?`
    - `/dokumen siapa tokoh utama di file ini?`
+   - atau pertanyaan natural yang jelas merujuk ke dokumen aktif, misalnya: `tolong baca dan ringkas PDF ini`
 4. Untuk menghapus dokumen aktif:
    - `/dokumen_reset`
 

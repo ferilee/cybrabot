@@ -192,6 +192,48 @@ function shouldHandleGroupCommand(ctx: any) {
   return isAuthorizedGroupUser(ctx);
 }
 
+function shouldTreatAsDocumentQuestion(text: string, hasActiveSession: boolean) {
+  const lower = text.toLowerCase();
+  const docHints = [
+    'dokumen',
+    'pdf',
+    'file ini',
+    'berkas ini',
+    'lampiran ini',
+    'gambar ini',
+    'teks ini',
+    'isi file',
+    'isi dokumen',
+    'isi pdf',
+    'baca',
+    'ringkas',
+    'rangkum',
+    'meringkas',
+    'jelaskan',
+    'kesimpulan',
+    'intisari',
+    'poin penting',
+    'apa isi',
+    'apa kesimpulan',
+    'bahas',
+    'ulas',
+  ];
+
+  if (docHints.some((hint) => lower.includes(hint))) {
+    return true;
+  }
+
+  if (!hasActiveSession) {
+    return false;
+  }
+
+  const looksShortAndReferenced =
+    lower.length <= 120 &&
+    (lower.includes('?') || lower.startsWith('apa ') || lower.startsWith('tolong ') || lower.startsWith('bisa '));
+
+  return looksShortAndReferenced && (lower.includes('ini') || lower.includes('itu') || lower.includes('file') || lower.includes('dokumen'));
+}
+
 async function requireOwner(ctx: any) {
   if (isBotOwner(ctx)) {
     return true;
@@ -768,6 +810,7 @@ bot.on('message:text', async (ctx) => {
 
     const history = await getConversationHistory(userId);
     const lowerText = text.toLowerCase();
+    const activeDocument = await getActiveDocumentSession(userId);
     if (lowerText.startsWith('dokumen:')) {
       const question = text.slice(text.indexOf(':') + 1).trim();
       if (!question) {
@@ -776,6 +819,11 @@ bot.on('message:text', async (ctx) => {
       }
 
       await answerActiveDocumentQuestion(ctx, question, startedAt);
+      return;
+    }
+
+    if (activeDocument && shouldTreatAsDocumentQuestion(text, true)) {
+      await answerActiveDocumentQuestion(ctx, text, startedAt);
       return;
     }
 
