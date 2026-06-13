@@ -4,7 +4,7 @@ export function analyzeText(text: string) {
   const doc = nlp(text);
   
   // Extract intents/entities
-  const hasNumbers = doc.values().length > 0;
+  const hasNumbers = doc.numbers().out('array').length > 0;
   const isQuestion = text.includes('?') || doc.questions().length > 0;
   const topics = doc.nouns().out('array');
   const verbs = doc.verbs().out('array');
