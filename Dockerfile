@@ -21,4 +21,4 @@ ENV DATABASE_URL=/app/data/sqlite.db
 
 EXPOSE 4129
 
-CMD ["sh", "-lc", "bun run db:push && bun run start"]
+CMD ["sh", "-lc", "bun run db:init && bun run start"]
