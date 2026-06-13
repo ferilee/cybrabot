@@ -370,6 +370,7 @@ function buildTelegramFileUrl(filePath?: string | null) {
 async function answerActiveDocumentQuestion(ctx: any, question: string, startedAt = Date.now()) {
   const userId = ctx.from.id;
   const session = await getActiveDocumentSession(userId);
+  const adminConfig = await getAdminConfig();
 
   if (!session) {
     await replySafely(
@@ -379,7 +380,7 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
     return true;
   }
 
-  const answer = await answerQuestionAboutDocument(session, question);
+  const answer = await answerQuestionAboutDocument(session, question, adminConfig.models.document);
   await logEvent('document.question_answered', {
     userId,
     title: session.title,
@@ -426,6 +427,32 @@ function shouldTreatAsDocumentSendRequest(text: string) {
     lower.includes('file aslinya') ||
     lower.includes('dokumen aslinya') ||
     lower.includes('berkas aslinya')
+  );
+}
+
+function normalizeModelAlias(model: string) {
+  const trimmed = model.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (lower === 'minimax' || lower === 'minimax-m3' || lower === 'mm') {
+    return 'tokenrouter:MiniMax-M3';
+  }
+
+  return trimmed;
+}
+
+function getAvailableModelsText() {
+  return (
+    `<b>Model yang tersedia</b>\n\n` +
+    `<b>Gemini (native)</b>\n` +
+    `- <code>gemini:gemini-2.5-flash</code>\n` +
+    `- <code>gemini:gemini-2.5-flash-lite</code>\n` +
+    `- <code>gemini:gemini-2.5-pro</code>\n\n` +
+    `<b>OpenAI-compatible / TokenRouter</b>\n` +
+    `- <code>tokenrouter:MiniMax-M3</code>\n\n` +
+    `<b>Alias singkat</b>\n` +
+    `- <code>minimax</code> = <code>tokenrouter:MiniMax-M3</code>\n` +
+    `- <code>/model list</code> atau <code>/models</code> untuk menampilkan daftar ini`
   );
 }
 
@@ -559,8 +586,14 @@ async function processIncomingDocument(ctx: any, input: {
 
   try {
     const downloaded = await downloadTelegramFile(input.fileId, input.fileName, input.mimeType);
-
-    const summary = await summarizeDocumentFromPath(downloaded.localPath, input.mimeType, input.fileName, input.prompt);
+    const adminConfig = await getAdminConfig();
+    const summary = await summarizeDocumentFromPath(
+      downloaded.localPath,
+      input.mimeType,
+      input.fileName,
+      input.prompt,
+      adminConfig.models.document,
+    );
     await saveActiveDocumentSession({
       userId,
       title: input.fileName,
@@ -800,6 +833,10 @@ bot.command('admin_status', async (ctx) => {
     `- caption: ${config.enabledTools.caption ? 'on' : 'off'}\n` +
     `- announcement: ${config.enabledTools.announcement ? 'on' : 'off'}\n` +
     `- faq: ${config.enabledTools.faq ? 'on' : 'off'}\n\n` +
+    `<b>Models:</b>\n` +
+    `- chat: ${config.models.chat}\n` +
+    `- intent: ${config.models.intent}\n` +
+    `- document: ${config.models.document}\n\n` +
     `<b>Persona override:</b> ${config.personaOverride ? 'active' : 'empty'}\n` +
     `<b>Self templates:</b> ready`
   );
@@ -873,6 +910,96 @@ bot.command('admin_self', async (ctx) => {
   });
 
   await replySafely(ctx, `Template <b>${field}</b> berhasil diperbarui.`);
+});
+
+bot.command('model', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const config = await getAdminConfig();
+  const raw = ctx.message!.text.replace(/^\/model(@\w+)?/i, '').trim();
+
+  if (!raw || raw.toLowerCase() === 'list' || raw.toLowerCase() === 'help') {
+    await replySafely(
+      ctx,
+      `<b>Model aktif saat ini</b>\n\n` +
+      `- chat: <code>${config.models.chat}</code>\n` +
+      `- intent: <code>${config.models.intent}</code>\n` +
+      `- document: <code>${config.models.document}</code>\n\n` +
+      `${getAvailableModelsText()}\n\n` +
+      `<b>Contoh update</b>\n` +
+      `<code>/model chat gemini:gemini-2.5-pro</code>\n` +
+      `<code>/model chat minimax</code>\n` +
+      `<code>/model intent gemini:gemini-2.5-flash-lite</code>\n` +
+      `<code>/model document gemini:gemini-2.5-flash</code>\n` +
+      `<code>/model all gemini:gemini-2.5-flash</code>`
+    );
+    return;
+  }
+
+  const [targetRaw, ...modelParts] = raw.split(/\s+/);
+  const singleToken = !modelParts.length;
+  const target = singleToken ? 'chat' : targetRaw?.toLowerCase();
+  const model = normalizeModelAlias(singleToken ? (targetRaw || '') : modelParts.join(' ').trim());
+
+  if (!target || !model) {
+    await replySafely(
+      ctx,
+      `Format:\n` +
+      `<code>/model chat gemini:gemini-2.5-pro</code>\n` +
+      `<code>/model chat minimax</code>\n` +
+      `<code>/model intent gemini:gemini-2.5-flash-lite</code>\n` +
+      `<code>/model document gemini:gemini-2.5-flash</code>\n` +
+      `<code>/model all gemini:gemini-2.5-flash</code>\n\n` +
+      `${getAvailableModelsText()}`
+    );
+    return;
+  }
+
+  const updates =
+    target === 'all'
+      ? { models: { chat: model, intent: model, document: model } }
+      : target === 'chat'
+        ? { models: { chat: model } }
+        : target === 'intent'
+          ? { models: { intent: model } }
+          : target === 'document'
+            ? { models: { document: model } }
+            : null;
+
+  if (!updates) {
+    await replySafely(
+      ctx,
+      `Target valid: <code>chat</code>, <code>intent</code>, <code>document</code>, atau <code>all</code>.`
+    );
+    return;
+  }
+
+  const updated = await saveAdminConfig(updates as any);
+  await replySafely(
+    ctx,
+    `<b>Model diperbarui</b>\n\n` +
+    `- chat: <code>${updated.models.chat}</code>\n` +
+    `- intent: <code>${updated.models.intent}</code>\n` +
+    `- document: <code>${updated.models.document}</code>`
+  );
+});
+
+bot.command('models', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const config = await getAdminConfig();
+  await replySafely(
+    ctx,
+    `<b>Model aktif saat ini</b>\n\n` +
+    `- chat: <code>${config.models.chat}</code>\n` +
+    `- intent: <code>${config.models.intent}</code>\n` +
+    `- document: <code>${config.models.document}</code>\n\n` +
+    `${getAvailableModelsText()}`
+  );
 });
 
 bot.command('admin_knowledge_add', async (ctx) => {
@@ -1001,6 +1128,7 @@ bot.on('message:text', async (ctx) => {
     const text = normalizeIncomingText(rawText, ctx);
     const userId = ctx.from.id;
     await ensureUserRegistered(ctx.from);
+    const adminConfig = await getAdminConfig();
 
     if (await processDocumentExport(ctx, text, startedAt)) {
       return;
@@ -1018,7 +1146,7 @@ bot.on('message:text', async (ctx) => {
     const analysis = analyzeText(text);
     
     // 2. AI Intent Routing
-    const intentResult = await getIntent(text);
+    const intentResult = await getIntent(text, adminConfig);
     await logEvent('message.intent_classified', {
       userId,
       intent: intentResult.intent,
@@ -1083,7 +1211,6 @@ bot.on('message:text', async (ctx) => {
     }
 
     const preferences = await getUserPreferences(userId);
-    const adminConfig = await getAdminConfig();
     const toolResult = runLocalTool(text, adminConfig);
 
     if (toolResult.handled && toolResult.response) {

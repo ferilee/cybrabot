@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 import type { AdminConfig } from './admin-config';
 import { getKnowledgeContext } from './knowledge';
 import { logEvent } from './observability';
@@ -13,6 +14,15 @@ if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
 const client = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'dummy_key',
 });
+
+const openAIBaseURL = process.env.OPENAI_BASE_URL || process.env.OPENAI_COMPAT_BASE_URL || 'https://api.tokenrouter.com/v1';
+const openAIApiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_COMPAT_API_KEY || process.env.TOKENROUTER_API_KEY || '';
+const openAIClient = openAIApiKey
+  ? new OpenAI({
+      apiKey: openAIApiKey,
+      baseURL: openAIBaseURL,
+    })
+  : null;
 
 const intentModel = process.env.GEMINI_INTENT_MODEL || 'gemini-2.5-flash-lite';
 const chatModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
@@ -112,10 +122,64 @@ function formatHistory(history: ChatHistoryItem[]) {
   return `Riwayat percakapan sebelumnya:\n${lines.join('\n')}\n\n`;
 }
 
+function resolveModel(override: string | undefined, fallback: string) {
+  return override?.trim() || fallback;
+}
+
+function parseModelSpec(spec: string) {
+  const trimmed = spec.trim();
+  if (!trimmed) {
+    return { provider: 'gemini' as const, model: chatModel };
+  }
+
+  const separatorIndex = trimmed.indexOf(':');
+  if (separatorIndex <= 0) {
+    return { provider: 'gemini' as const, model: trimmed };
+  }
+
+  const provider = trimmed.slice(0, separatorIndex).toLowerCase();
+  const model = trimmed.slice(separatorIndex + 1).trim();
+
+  if (!model) {
+    return { provider: 'gemini' as const, model: trimmed };
+  }
+
+  if (provider === 'gemini') {
+    return { provider: 'gemini' as const, model };
+  }
+
+  if (provider === 'tokenrouter' || provider === 'openai' || provider === 'openai-compatible') {
+    return { provider: 'tokenrouter' as const, model };
+  }
+
+  return { provider: 'gemini' as const, model: trimmed };
+}
+
 async function generateText(model: string, instructions: string, input: string) {
   const startedAt = Date.now();
+  const parsed = parseModelSpec(model);
+
+  if (parsed.provider === 'tokenrouter') {
+    if (!openAIClient) {
+      throw new Error('OPENAI_API_KEY atau TOKENROUTER_API_KEY belum diisi untuk model OpenAI-compatible');
+    }
+
+    const response = await openAIClient.chat.completions.create({
+      model: parsed.model,
+      messages: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: input },
+      ],
+    });
+
+    return {
+      text: response.choices[0]?.message?.content?.trim() || '',
+      latencyMs: Date.now() - startedAt,
+    };
+  }
+
   const response = await client.models.generateContent({
-    model,
+    model: parsed.model,
     contents: input,
     config: {
       systemInstruction: instructions,
@@ -128,21 +192,22 @@ async function generateText(model: string, instructions: string, input: string) 
   };
 }
 
-export async function getIntent(message: string): Promise<IntentResult> {
+export async function getIntent(message: string, adminConfig?: Pick<AdminConfig, 'models'>): Promise<IntentResult> {
+  const model = resolveModel(adminConfig?.models.intent, intentModel);
   try {
-    const result = await generateText(intentModel, intentInstructions, message);
+    const result = await generateText(model, intentInstructions, message);
     const intent = result.text.toLowerCase().includes('technical') ? 'technical' : 'casual';
     return {
       intent,
-      model: intentModel,
+      model,
       latencyMs: result.latencyMs,
       fallback: false,
     };
   } catch (error) {
-    await logEvent('ai.intent_error', { model: intentModel, error: String(error) }, 'error');
+    await logEvent('ai.intent_error', { model, error: String(error) }, 'error');
     return {
       intent: 'casual',
-      model: intentModel,
+      model,
       latencyMs: 0,
       fallback: true,
     };
@@ -153,28 +218,29 @@ export async function generateResponse(
   message: string,
   history: ChatHistoryItem[] = [],
   preferences: UserPreferences = {},
-  adminConfig?: Pick<AdminConfig, 'personaOverride'>
+  adminConfig?: Pick<AdminConfig, 'personaOverride' | 'models'>
 ): Promise<GenerationResult> {
   const knowledge = getKnowledgeContext(message);
+  const model = resolveModel(adminConfig?.models.chat, chatModel);
   try {
     const result = await generateText(
-      chatModel,
+      model,
       casualInstructions,
       `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Pesan terbaru user:\n${message}`
     );
     return {
       text: formatTelegramRichText(result.text),
-      model: chatModel,
+      model,
       latencyMs: result.latencyMs,
       knowledgeMatches: knowledge.matches,
       historyCount: history.length,
       fallback: false,
     };
   } catch (error: any) {
-    await logEvent('ai.generation_error', { model: chatModel, error: error?.message || String(error) }, 'error');
+    await logEvent('ai.generation_error', { model, error: error?.message || String(error) }, 'error');
     return {
       text: 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!',
-      model: chatModel,
+      model,
       latencyMs: 0,
       knowledgeMatches: knowledge.matches,
       historyCount: history.length,
@@ -187,28 +253,29 @@ export async function generateTechnicalResponse(
   message: string,
   history: ChatHistoryItem[] = [],
   preferences: UserPreferences = {},
-  adminConfig?: Pick<AdminConfig, 'personaOverride'>
+  adminConfig?: Pick<AdminConfig, 'personaOverride' | 'models'>
 ): Promise<GenerationResult> {
   const knowledge = getKnowledgeContext(message);
+  const model = resolveModel(adminConfig?.models.chat, chatModel);
   try {
     const result = await generateText(
-      chatModel,
+      model,
       technicalInstructions,
       `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
     );
     return {
       text: formatTelegramRichText(result.text),
-      model: chatModel,
+      model,
       latencyMs: result.latencyMs,
       knowledgeMatches: knowledge.matches,
       historyCount: history.length,
       fallback: false,
     };
   } catch (error: any) {
-    await logEvent('ai.generation_error', { model: chatModel, error: error?.message || String(error) }, 'error');
+    await logEvent('ai.generation_error', { model, error: error?.message || String(error) }, 'error');
     return {
       text: 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!',
-      model: chatModel,
+      model,
       latencyMs: 0,
       knowledgeMatches: knowledge.matches,
       historyCount: history.length,
@@ -221,11 +288,12 @@ export async function generateDocumentDraft(
   request: string,
   history: ChatHistoryItem[] = [],
   preferences: UserPreferences = {},
-  adminConfig?: Pick<AdminConfig, 'personaOverride'>
+  adminConfig?: Pick<AdminConfig, 'personaOverride' | 'models'>
 ): Promise<DocumentDraftResult> {
+  const model = resolveModel(adminConfig?.models.document, chatModel);
   try {
     const result = await generateText(
-      chatModel,
+      model,
       documentDraftInstructions,
       `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}` +
       `${formatPreferenceInstruction(preferences)}` +
@@ -241,16 +309,16 @@ export async function generateDocumentDraft(
     return {
       text: result.text,
       title: firstTitleLine?.slice(2).trim() || 'Dokumen CybraFeriBot',
-      model: chatModel,
+      model,
       latencyMs: result.latencyMs,
       fallback: false,
     };
   } catch (error: any) {
-    await logEvent('ai.generation_error', { model: chatModel, feature: 'document_draft', error: error?.message || String(error) }, 'error');
+    await logEvent('ai.generation_error', { model, feature: 'document_draft', error: error?.message || String(error) }, 'error');
     return {
       text: '# Dokumen CybraFeriBot\n\nMaaf, saya belum berhasil menyusun isi dokumen saat ini.',
       title: 'Dokumen CybraFeriBot',
-      model: chatModel,
+      model,
       latencyMs: 0,
       fallback: true,
     };

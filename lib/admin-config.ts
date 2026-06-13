@@ -9,6 +9,11 @@ export type AdminConfig = {
     announcement: boolean;
     faq: boolean;
   };
+  models: {
+    chat: string;
+    intent: string;
+    document: string;
+  };
   personaOverride: string;
   selfDescribe: {
     identity: string;
@@ -20,6 +25,7 @@ export type AdminConfig = {
 
 export type AdminConfigInput = {
   enabledTools?: Partial<AdminConfig['enabledTools']>;
+  models?: Partial<AdminConfig['models']>;
   personaOverride?: string;
   selfDescribe?: Partial<AdminConfig['selfDescribe']>;
 };
@@ -32,6 +38,11 @@ const defaultAdminConfig: AdminConfig = {
     caption: true,
     announcement: true,
     faq: true,
+  },
+  models: {
+    chat: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    intent: process.env.GEMINI_INTENT_MODEL || 'gemini-2.5-flash-lite',
+    document: process.env.GEMINI_DOCUMENT_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
   },
   personaOverride: '',
   selfDescribe: {
@@ -89,6 +100,10 @@ export async function getAdminConfig(): Promise<AdminConfig> {
         ...defaultAdminConfig.enabledTools,
         ...(parsed.enabledTools || {}),
       },
+      models: {
+        ...defaultAdminConfig.models,
+        ...(parsed.models || {}),
+      },
       personaOverride: parsed.personaOverride || '',
       selfDescribe: {
         ...defaultAdminConfig.selfDescribe,
@@ -106,6 +121,10 @@ export async function saveAdminConfig(input: AdminConfigInput) {
     enabledTools: {
       ...existing.enabledTools,
       ...(input.enabledTools || {}),
+    },
+    models: {
+      ...existing.models,
+      ...(input.models || {}),
     },
     personaOverride: input.personaOverride ?? existing.personaOverride,
     selfDescribe: {

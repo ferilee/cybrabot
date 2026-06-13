@@ -31,6 +31,8 @@ Isi variabel berikut:
 - `GEMINI_MODEL` *(opsional)*: default `gemini-2.5-flash`.
 - `GEMINI_INTENT_MODEL` *(opsional)*: default `gemini-2.5-flash-lite`.
 - `GEMINI_DOCUMENT_MODEL` *(opsional)*: model untuk ringkasan PDF/gambar dan tanya jawab dokumen.
+- `OPENAI_API_KEY` *(opsional)*: dipakai untuk provider OpenAI-compatible seperti TokenRouter/MiniMax.
+- `OPENAI_BASE_URL` *(opsional)*: base URL provider OpenAI-compatible, default `https://api.tokenrouter.com/v1`.
 - `DOCUMENT_MAX_BYTES` *(opsional)*: batas ukuran file yang diproses bot, default `20971520` (20MB).
 - `ADMIN_TOKEN` *(opsional)*: token untuk mengubah konfigurasi admin runtime via API.
 - `GROUP_ALLOWED_USER_ID` *(opsional)*: hanya user ini yang boleh memanggil bot di grup, default `177517779`.
@@ -88,6 +90,23 @@ curl -X POST "http://localhost:4129/admin/config?token=ADMIN_TOKEN_ANDA" \
 ```
 
 Panel admin web menggunakan endpoint yang sama. Buka `/admin`, isi `ADMIN_TOKEN`, lalu lakukan perubahan dari browser.
+
+### Format model runtime
+Anda bisa mengganti model runtime lewat Telegram dengan prefiks provider:
+- `gemini:gemini-2.5-flash`
+- `gemini:gemini-2.5-pro`
+- `tokenrouter:MiniMax-M3`
+
+Contoh:
+```text
+/model chat tokenrouter:MiniMax-M3
+/model intent gemini:gemini-2.5-flash-lite
+/model document gemini:gemini-2.5-flash
+/model minimax
+/models
+```
+
+Jika prefiks provider tidak ditulis, bot menganggap model itu milik Gemini.
 
 Di panel admin, Anda juga bisa mengubah template jawaban meta bot seperti:
 - identitas CybraFeriBot

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { GoogleGenAI, createPartFromBase64, createPartFromUri } from '@google/genai';
+import OpenAI from 'openai';
 import { logEvent } from './observability';
 import type { ActiveDocumentSession } from './document-session';
 import { extractTextFromDocument, isTextDocumentMimeType } from './document-source';
@@ -12,6 +13,15 @@ if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
 const client = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'dummy_key',
 });
+
+const openAIBaseURL = process.env.OPENAI_BASE_URL || process.env.OPENAI_COMPAT_BASE_URL || 'https://api.tokenrouter.com/v1';
+const openAIApiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_COMPAT_API_KEY || process.env.TOKENROUTER_API_KEY || '';
+const openAIClient = openAIApiKey
+  ? new OpenAI({
+      apiKey: openAIApiKey,
+      baseURL: openAIBaseURL,
+    })
+  : null;
 
 const documentModel = process.env.GEMINI_DOCUMENT_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
@@ -111,6 +121,83 @@ function buildPromptForTextDocument(documentText: string, prompt?: string) {
   );
 }
 
+function parseModelSpec(spec?: string) {
+  const trimmed = spec?.trim() || '';
+  if (!trimmed) {
+    return { provider: 'gemini' as const, model: documentModel };
+  }
+
+  const separatorIndex = trimmed.indexOf(':');
+  if (separatorIndex <= 0) {
+    return { provider: 'gemini' as const, model: trimmed };
+  }
+
+  const provider = trimmed.slice(0, separatorIndex).toLowerCase();
+  const model = trimmed.slice(separatorIndex + 1).trim();
+
+  if (!model) {
+    return { provider: 'gemini' as const, model: trimmed };
+  }
+
+  if (provider === 'gemini') {
+    return { provider: 'gemini' as const, model };
+  }
+
+  if (provider === 'tokenrouter' || provider === 'openai' || provider === 'openai-compatible') {
+    return { provider: 'tokenrouter' as const, model };
+  }
+
+  return { provider: 'gemini' as const, model: trimmed };
+}
+
+async function generateTextWithModelSpec(modelSpec: string | undefined, instructions: string, input: string) {
+  const startedAt = Date.now();
+  const parsed = parseModelSpec(modelSpec);
+
+  if (parsed.provider === 'tokenrouter') {
+    if (!openAIClient) {
+      throw new Error('OPENAI_API_KEY atau TOKENROUTER_API_KEY belum diisi untuk model OpenAI-compatible');
+    }
+
+    const response = await openAIClient.chat.completions.create({
+      model: parsed.model,
+      messages: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: input },
+      ],
+    });
+
+    return {
+      text: response.choices[0]?.message?.content?.trim() || '',
+      latencyMs: Date.now() - startedAt,
+      model: modelSpec?.trim() || `${parsed.provider}:${parsed.model}`,
+    };
+  }
+
+  const response = await client.models.generateContent({
+    model: parsed.model,
+    contents: input,
+    config: {
+      systemInstruction: instructions,
+    },
+  });
+
+  return {
+    text: response.text?.trim() || '',
+    latencyMs: Date.now() - startedAt,
+    model: modelSpec?.trim() || parsed.model,
+  };
+}
+
+function resolveVisionModel(modelSpec?: string) {
+  const parsed = parseModelSpec(modelSpec);
+  if (parsed.provider === 'gemini') {
+    return parsed.model;
+  }
+
+  return documentModel;
+}
+
 async function createImagePartFromPath(filePath: string, mimeType: string) {
   const bytes = await Bun.file(filePath).arrayBuffer();
   const base64 = Buffer.from(bytes).toString('base64');
@@ -122,28 +209,30 @@ export async function summarizeDocumentFromPath(
   mimeType: string,
   displayName: string,
   prompt?: string,
+  modelOverride?: string,
 ): Promise<DocumentSummaryResult> {
   const startedAt = Date.now();
 
   if (isTextDocumentMimeType(mimeType)) {
     const extractedText = await extractTextFromDocument(filePath, mimeType);
-    const response = await client.models.generateContent({
-      model: documentModel,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: buildPromptForTextDocument(extractedText, prompt),
-            },
-          ],
-        },
-      ],
-    });
+    const response = await generateTextWithModelSpec(
+      modelOverride,
+      `Anda adalah @CybraFeriBot, asisten yang menyiapkan isi dokumen untuk diekspor menjadi PDF atau DOCX.\n` +
+      `Buat isi dokumen dalam bahasa Indonesia yang rapi, langsung siap diekspor.\n` +
+      `Gunakan format plain text terstruktur dengan aturan berikut:\n` +
+      `- Baris judul utama diawali "# "\n` +
+      `- Subjudul diawali "## "\n` +
+      `- Poin bullet diawali "- "\n` +
+      `- Paragraf biasa tanpa markup lain\n` +
+      `- Jangan gunakan markdown selain pola di atas\n` +
+      `- Jangan gunakan tabel\n` +
+      `- Jangan sertakan penjelasan pembuka seperti "berikut adalah"`,
+      buildPromptForTextDocument(extractedText, prompt),
+    );
 
     return {
       summary: formatTelegramRichText(response.text?.trim() || 'Dokumen berhasil dibaca, tetapi ringkasan kosong.'),
-      model: documentModel,
+      model: response.model,
       latencyMs: Date.now() - startedAt,
       geminiFileName: '',
       geminiFileUri: '',
@@ -153,8 +242,9 @@ export async function summarizeDocumentFromPath(
   }
 
   if (mimeType.startsWith('image/')) {
+    const visionModel = resolveVisionModel(modelOverride);
     const response = await client.models.generateContent({
-      model: documentModel,
+      model: visionModel,
       contents: [
         {
           role: 'user',
@@ -170,7 +260,7 @@ export async function summarizeDocumentFromPath(
 
     return {
       summary: formatTelegramRichText(response.text?.trim() || 'Gambar berhasil diproses, tetapi ringkasan kosong.'),
-      model: documentModel,
+      model: visionModel,
       latencyMs: Date.now() - startedAt,
       geminiFileName: '',
       geminiFileUri: '',
@@ -196,7 +286,7 @@ export async function summarizeDocumentFromPath(
   }
 
   const response = await client.models.generateContent({
-    model: documentModel,
+    model: resolveVisionModel(modelOverride),
     contents: [
       {
         role: 'user',
@@ -212,7 +302,7 @@ export async function summarizeDocumentFromPath(
 
   return {
     summary: formatTelegramRichText(response.text?.trim() || 'Dokumen berhasil diproses, tetapi ringkasan kosong.'),
-    model: documentModel,
+    model: resolveVisionModel(modelOverride),
     latencyMs: Date.now() - startedAt,
     geminiFileName: readyFile.name || uploaded.name,
     geminiFileUri: readyFile.uri,
@@ -220,7 +310,11 @@ export async function summarizeDocumentFromPath(
   };
 }
 
-export async function answerQuestionAboutDocument(session: ActiveDocumentSession, question: string) {
+export async function answerQuestionAboutDocument(
+  session: ActiveDocumentSession,
+  question: string,
+  modelOverride?: string,
+) {
   const startedAt = Date.now();
 
   if (session.sourceKind === 'text') {
@@ -229,28 +323,18 @@ export async function answerQuestionAboutDocument(session: ActiveDocumentSession
       throw new Error('Dokumen teks aktif tidak memiliki isi yang bisa dibaca');
     }
 
-    const response = await client.models.generateContent({
-      model: documentModel,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text:
-                `Jawab pertanyaan pengguna berdasarkan isi dokumen berikut.\n` +
-                `Kalau jawaban tidak ada di dalam dokumen, katakan dengan jujur bahwa informasi itu tidak terlihat di dokumen.\n` +
-                `Jika diminta menghitung atau menyelesaikan soal, berikan langkah dan jawaban akhirnya.\n\n` +
-                `Isi dokumen:\n${documentText}\n\n` +
-                `Pertanyaan pengguna: ${question}`,
-            },
-          ],
-        },
-      ],
-    });
+    const response = await generateTextWithModelSpec(
+      modelOverride,
+      `Anda adalah @CybraFeriBot, asisten yang menjawab pertanyaan berdasarkan isi dokumen.\n` +
+      `Kalau jawaban tidak ada di dalam dokumen, katakan dengan jujur bahwa informasi itu tidak terlihat di dokumen.\n` +
+      `Jika diminta menghitung atau menyelesaikan soal, berikan langkah dan jawaban akhirnya.\n` +
+      `Gunakan struktur plain text yang rapi dengan heading "# ", bullet "- ", kutipan "> ", atau code fence jika perlu.`,
+      `Isi dokumen:\n${documentText}\n\nPertanyaan pengguna: ${question}`,
+    );
 
     return {
       text: formatTelegramRichText(response.text?.trim() || 'Saya belum bisa menemukan jawaban yang jelas dari dokumen itu.'),
-      model: documentModel,
+      model: response.model,
       latencyMs: Date.now() - startedAt,
       fallback: false,
     };
@@ -261,8 +345,9 @@ export async function answerQuestionAboutDocument(session: ActiveDocumentSession
       throw new Error('Dokumen gambar aktif tidak memiliki file lokal');
     }
 
+    const visionModel = resolveVisionModel(modelOverride);
     const response = await client.models.generateContent({
-      model: documentModel,
+      model: visionModel,
       contents: [
         {
           role: 'user',
@@ -283,18 +368,19 @@ export async function answerQuestionAboutDocument(session: ActiveDocumentSession
 
     return {
       text: formatTelegramRichText(response.text?.trim() || 'Saya belum bisa menemukan jawaban yang jelas dari gambar itu.'),
-      model: documentModel,
+      model: visionModel,
       latencyMs: Date.now() - startedAt,
       fallback: false,
     };
   }
 
+  const visionModel = resolveVisionModel(modelOverride);
   if (!session.geminiFileUri) {
     throw new Error('Dokumen aktif tidak memiliki referensi file Gemini');
   }
 
   const response = await client.models.generateContent({
-    model: documentModel,
+    model: visionModel,
     contents: [
       {
         role: 'user',
@@ -315,7 +401,7 @@ export async function answerQuestionAboutDocument(session: ActiveDocumentSession
 
   return {
     text: formatTelegramRichText(response.text?.trim() || 'Saya belum bisa menemukan jawaban yang jelas dari dokumen itu.'),
-    model: documentModel,
+    model: visionModel,
     latencyMs: Date.now() - startedAt,
     fallback: false,
   };
