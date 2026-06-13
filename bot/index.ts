@@ -2,9 +2,9 @@ import 'dotenv/config';
 import { Bot, webhookCallback } from 'grammy';
 import { db } from '../db';
 import { users, messages } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { analyzeText } from '../lib/nlp';
-import { getIntent, generateResponse } from '../lib/ai';
+import { generateResponse, generateTechnicalResponse, getIntent, type ChatHistoryItem } from '../lib/ai';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -42,6 +42,23 @@ async function replySafely(ctx: any, text: string) {
 
     await ctx.reply(limitTelegramMessage(limitedText.replace(/<[^>]+>/g, '')));
   }
+}
+
+async function getConversationHistory(userId: number): Promise<ChatHistoryItem[]> {
+  const recentMessages = await db.query.messages.findMany({
+    where: eq(messages.userId, userId),
+    orderBy: [desc(messages.timestamp), desc(messages.id)],
+    limit: 10,
+  });
+
+  return recentMessages
+    .slice()
+    .reverse()
+    .map((message) => ({
+      role: (message.role === 'bot' ? 'bot' : 'user') as ChatHistoryItem['role'],
+      content: message.content ?? '',
+    }))
+    .filter((message) => message.content.trim().length > 0);
 }
 
 bot.command('start', async (ctx) => {
@@ -89,15 +106,21 @@ bot.on('message:text', async (ctx) => {
       intent,
     });
 
+    const history = await getConversationHistory(userId);
+    const lowerText = text.toLowerCase();
+
     if (intent === 'technical') {
-      if (analysis.hasNumbers) {
-        await replySafely(ctx, `Wah, ada angka-angka nih. Sebagai asisten teknis, Kakak tenang saja, saya sedang mempelajari modul matematika lanjut buat bantu Kakak nanti! ðŸ’¡`);
-      } else {
-        await replySafely(ctx, `Pesan teknis Kakak sudah saya terima. Akan segera saya proses sesuai protokol @CybraFeriBot ya!`);
-      }
+      const response = await generateTechnicalResponse(text, history);
+      await replySafely(ctx, response);
+
+      await db.insert(messages).values({
+        userId,
+        content: response,
+        role: 'bot',
+        intent: 'technical',
+      });
     } else {
       // 4. Local Keyword Handling (to save AI quota)
-      const lowerText = text.toLowerCase();
       if (lowerText.includes('feri lee') || lowerText.includes('mas feri') || lowerText.includes('/about')) {
         const feriInfo = `
 <b>Mas Feri Dwi Hermawan (atau Mas Feri Lee)</b> ini bisa dibilang sosok "Guru SMK Paket Lengkap".
@@ -124,7 +147,7 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! ðŸš
       }
 
       // 5. Casual Chat with LLM
-      const response = await generateResponse(text);
+      const response = await generateResponse(text, history);
       await replySafely(ctx, response);
       
       // Save Bot Response

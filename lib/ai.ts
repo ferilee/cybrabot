@@ -11,6 +11,12 @@ const client = new GoogleGenAI({
 
 const intentModel = process.env.GEMINI_INTENT_MODEL || 'gemini-2.5-flash-lite';
 const chatModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const historyLimit = Number(process.env.CHAT_HISTORY_LIMIT || 10);
+
+export type ChatHistoryItem = {
+  role: 'user' | 'bot';
+  content: string;
+};
 
 const intentInstructions = `Determine the intent of the following user message for a Telegram bot named @CybraFeriBot.
 The bot is a futuristic smart assistant.
@@ -29,6 +35,26 @@ Mas Feri Dwi Hermawan (atau Mas Feri Lee) adalah sosok "Guru SMK Paket Lengkap".
 - Sangat rapi dan terstruktur (bikin sistem otomatis sekolah, silsilah keluarga, dll).
 - Penikmat kopi hitam dan sangat menghargai sejarah keluarga.
 Intinya, beliau adalah pendidik modern yang "full-stack teacher" dan selalu haus belajar hal baru untuk membantu orang lain.`;
+
+const technicalInstructions = `Anda adalah @CybraFeriBot, asisten teknis yang membantu secara praktis.
+Gunakan bahasa Indonesia yang jelas, ringkas, dan langsung ke solusi.
+Panggil pengguna dengan sebutan "Kakak" bila terasa natural.
+Kalau pengguna meminta dibuatkan sesuatu, jangan hanya memberi komentar umum; berikan hasil kerja nyata, langkah, struktur, contoh, atau draft yang bisa dipakai.
+Kalau informasi kurang, buat asumsi yang wajar dan sebutkan asumsi itu singkat di awal.
+PENTING: Gunakan format HTML sederhana bila perlu (misalnya <b>...</b>), tetapi hindari tag yang rumit.
+Jangan mengarang fakta spesifik yang tidak diketahui.`;
+
+function formatHistory(history: ChatHistoryItem[]) {
+  if (!history.length) {
+    return '';
+  }
+
+  const lines = history
+    .slice(-historyLimit)
+    .map((item) => `${item.role === 'user' ? 'User' : 'Bot'}: ${item.content}`);
+
+  return `Riwayat percakapan sebelumnya:\n${lines.join('\n')}\n\n`;
+}
 
 async function generateText(model: string, instructions: string, input: string) {
   const response = await client.models.generateContent({
@@ -52,9 +78,26 @@ export async function getIntent(message: string) {
   }
 }
 
-export async function generateResponse(message: string) {
+export async function generateResponse(message: string, history: ChatHistoryItem[] = []) {
   try {
-    return await generateText(chatModel, casualInstructions, message);
+    return await generateText(
+      chatModel,
+      casualInstructions,
+      `${formatHistory(history)}Pesan terbaru user:\n${message}`
+    );
+  } catch (error: any) {
+    console.error('AI Generation Error:', error?.message || error);
+    return 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!';
+  }
+}
+
+export async function generateTechnicalResponse(message: string, history: ChatHistoryItem[] = []) {
+  try {
+    return await generateText(
+      chatModel,
+      technicalInstructions,
+      `${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
+    );
   } catch (error: any) {
     console.error('AI Generation Error:', error?.message || error);
     return 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!';
