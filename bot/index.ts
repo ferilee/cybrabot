@@ -14,6 +14,36 @@ if (token.startsWith('123456')) {
 }
 export const bot = new Bot(token);
 
+const TELEGRAM_MESSAGE_LIMIT = 4000;
+
+function limitTelegramMessage(text: string) {
+  if (text.length <= TELEGRAM_MESSAGE_LIMIT) {
+    return text;
+  }
+
+  return `${text.slice(0, TELEGRAM_MESSAGE_LIMIT - 3)}...`;
+}
+
+async function replySafely(ctx: any, text: string) {
+  const limitedText = limitTelegramMessage(text);
+
+  try {
+    await ctx.reply(limitedText, { parse_mode: 'HTML' });
+  } catch (error: any) {
+    const description = error?.description || error?.message || '';
+    const isParseError =
+      description.includes("can't parse entities") ||
+      description.includes('message is too long') ||
+      description.includes('Bad Request');
+
+    if (!isParseError) {
+      throw error;
+    }
+
+    await ctx.reply(limitTelegramMessage(limitedText.replace(/<[^>]+>/g, '')));
+  }
+}
+
 bot.command('start', async (ctx) => {
   try {
     const { id, username, first_name } = ctx.from!;
@@ -31,7 +61,7 @@ bot.command('start', async (ctx) => {
       });
     }
 
-    await ctx.reply(`Halo <b>Kakak ${first_name}</b>! Saya @CybraFeriBot. Ada yang bisa saya bantu hari ini? 🚀`, { parse_mode: 'HTML' });
+    await replySafely(ctx, `Halo <b>Kakak ${first_name}</b>! Saya @CybraFeriBot. Ada yang bisa saya bantu hari ini? 🚀`);
   } catch (error) {
     console.error('Error in /start command:', error);
     await ctx.reply('Terjadi kesalahan saat memulai bot. Silakan coba lagi nanti.');
@@ -61,9 +91,9 @@ bot.on('message:text', async (ctx) => {
 
     if (intent === 'technical') {
       if (analysis.hasNumbers) {
-        await ctx.reply(`Wah, ada angka-angka nih. Sebagai asisten teknis, Kakak tenang saja, saya sedang mempelajari modul matematika lanjut buat bantu Kakak nanti! 💡`, { parse_mode: 'HTML' });
+        await replySafely(ctx, `Wah, ada angka-angka nih. Sebagai asisten teknis, Kakak tenang saja, saya sedang mempelajari modul matematika lanjut buat bantu Kakak nanti! 💡`);
       } else {
-        await ctx.reply(`Pesan teknis Kakak sudah saya terima. Akan segera saya proses sesuai protokol @CybraFeriBot ya!`, { parse_mode: 'HTML' });
+        await replySafely(ctx, `Pesan teknis Kakak sudah saya terima. Akan segera saya proses sesuai protokol @CybraFeriBot ya!`);
       }
     } else {
       // 4. Local Keyword Handling (to save AI quota)
@@ -81,7 +111,7 @@ Di satu sisi, Mas Feri adalah abdi negara yang mengajar Matematika di <b>SMKN Pa
 • <b>Sisi Personal:</b> Penikmat kopi hitam & sangat menghargai sejarah keluarga.
 
 Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! 🚀☕️`;
-        await ctx.reply(feriInfo, { parse_mode: 'HTML' });
+        await replySafely(ctx, feriInfo);
         
         // Save Response to DB
         await db.insert(messages).values({
@@ -95,7 +125,7 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! �
 
       // 5. Casual Chat with LLM
       const response = await generateResponse(text);
-      await ctx.reply(response, { parse_mode: 'HTML' });
+      await replySafely(ctx, response);
       
       // Save Bot Response
       await db.insert(messages).values({
@@ -107,7 +137,7 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! �
     }
   } catch (error) {
     console.error('Error in message handler:', error);
-    await ctx.reply('Aduh, sepertinya otak digital saya sedikit korsleting. Bisa ulangi pertanyaannya? 🤖', { parse_mode: 'HTML' });
+    await ctx.reply('Aduh, sepertinya otak digital saya sedikit korsleting. Bisa ulangi pertanyaannya? 🤖');
   }
 });
 
