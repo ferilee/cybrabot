@@ -20,6 +20,25 @@ app.get('/', async (c) => {
       user: true
     }
   });
+  const totalUsers = userCount[0]?.value ?? 0;
+  const totalMessages = msgCount[0]?.value ?? 0;
+  const recentMessageItems = recentMessages.map((message) => {
+    const role = message.role ?? 'unknown';
+    const content = message.content ?? '';
+    const preview = content.length > 50 ? `${content.substring(0, 50)}...` : content;
+    const timeLabel = message.timestamp?.toLocaleTimeString() ?? '-';
+    const roleClass = role === 'user' ? 'tag-user' : 'tag-bot';
+
+    return `
+                <div class="log-item">
+                    <span>
+                        <span class="tag ${roleClass}">${role.toUpperCase()}</span>
+                        <span style="margin-left: 10px;">${preview || '(empty message)'}</span>
+                    </span>
+                    <span style="opacity: 0.4; font-size: 0.8rem;">${timeLabel}</span>
+                </div>
+            `;
+  }).join('');
 
   return c.html(`
     <!DOCTYPE html>
@@ -130,11 +149,11 @@ app.get('/', async (c) => {
 
         <div class="stats-container">
             <div class="glass stat-card">
-                <span class="stat-value">${userCount[0].value}</span>
+                <span class="stat-value">${totalUsers}</span>
                 <span class="stat-label">Total Users</span>
             </div>
             <div class="glass stat-card">
-                <span class="stat-value">${msgCount[0].value}</span>
+                <span class="stat-value">${totalMessages}</span>
                 <span class="stat-label">Messages Processed</span>
             </div>
             <div class="glass stat-card">
@@ -145,15 +164,7 @@ app.get('/', async (c) => {
 
         <div class="glass log-section">
             <h3 style="margin-top: 0;">Recent Activity</h3>
-            ${recentMessages.map(m => `
-                <div class="log-item">
-                    <span>
-                        <span class="tag ${m.role === 'user' ? 'tag-user' : 'tag-bot'}">${m.role.toUpperCase()}</span>
-                        <span style="margin-left: 10px;">${m.content.substring(0, 50)}${m.content.length > 50 ? '...' : ''}</span>
-                    </span>
-                    <span style="opacity: 0.4; font-size: 0.8rem;">${m.timestamp?.toLocaleTimeString()}</span>
-                </div>
-            `).join('')}
+            ${recentMessageItems}
         </div>
     </body>
     </html>
