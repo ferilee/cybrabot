@@ -174,8 +174,48 @@ function tryFaqTool(text: string): ToolResult {
   };
 }
 
+function tryCapabilityTool(text: string): ToolResult {
+  const lower = text.toLowerCase();
+  const asksAboutImprovement =
+    (lower.includes('meningkatkan kemampuan') ||
+      lower.includes('supaya lebih pintar') ||
+      lower.includes('agar lebih pintar') ||
+      lower.includes('fitur apa lagi') ||
+      lower.includes('apa yang bisa ditambah') ||
+      lower.includes('bagaimana kamu bisa berkembang')) &&
+    (lower.includes('bot') || lower.includes('kamu') || lower.includes('cybraferibot'));
+
+  if (!asksAboutImprovement) {
+    return { handled: false };
+  }
+
+  return {
+    handled: true,
+    toolName: 'capability',
+    response:
+      `<b>CybraFeriBot bisa ditingkatkan lewat jalur yang konkret, bukan sekadar "belajar sendiri".</b>\n\n` +
+      `<b>Kemampuan yang sudah ada sekarang:</b>\n` +
+      `- chat biasa dan jawaban teknis ringan\n` +
+      `- knowledge base lokal\n` +
+      `- tool lokal seperti hitung, caption, dan pengumuman\n` +
+      `- ringkas <b>PDF/gambar</b> dan tanya jawab dokumen\n` +
+      `- buat file <b>PDF</b> dan <b>DOCX</b>\n\n` +
+      `<b>Kalau mau dibuat lebih kuat, prioritas peningkatannya biasanya:</b>\n` +
+      `- tambah knowledge base yang lebih lengkap dan terkurasi\n` +
+      `- tambah tool/action baru yang benar-benar menyelesaikan tugas\n` +
+      `- perbaiki prompt dan routing intent\n` +
+      `- tambah evaluasi dari log error, latency, dan pertanyaan user\n` +
+      `- tambah template dokumen agar output PDF/DOCX lebih konsisten\n\n` +
+      `Jadi peningkatannya datang dari <b>kode, prompt, knowledge, dan tool</b>, bukan dari interaksi acak saja.`,
+    metadata: {
+      topic: 'capability_improvement',
+    },
+  };
+}
+
 export function runLocalTool(text: string, config?: Pick<AdminConfig, 'enabledTools'>) {
   const tools = [
+    { name: 'faq', fn: tryCapabilityTool },
     { name: 'math', fn: tryMathTool },
     { name: 'caption', fn: tryCaptionTool },
     { name: 'announcement', fn: tryAnnouncementTool },
