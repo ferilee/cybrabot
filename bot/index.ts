@@ -524,7 +524,7 @@ bot.on('message:text', async (ctx) => {
 
       await logEvent('message.completed', {
         userId,
-        route: 'tool',
+        route: toolResult.toolName === 'self_describe' ? 'self_describe' : 'tool',
         durationMs: Date.now() - startedAt,
       });
 

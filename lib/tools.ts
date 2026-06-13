@@ -8,6 +8,17 @@ type ToolResult = {
   metadata?: Record<string, unknown>;
 };
 
+function isMetaBotQuestion(text: string) {
+  const lower = text.toLowerCase();
+  return lower.includes('cybraferibot') ||
+    lower.includes('bot ini') ||
+    lower.includes('kamu bisa apa') ||
+    lower.includes('fiturmu') ||
+    lower.includes('fitur kamu') ||
+    lower.includes('cara kerjamu') ||
+    lower.includes('cara kerja bot');
+}
+
 function cleanExpression(input: string) {
   return input
     .replace(/[^0-9+\-*/().,%x÷\s]/gi, '')
@@ -191,7 +202,7 @@ function tryCapabilityTool(text: string): ToolResult {
 
   return {
     handled: true,
-    toolName: 'capability',
+    toolName: 'self_describe',
     response:
       `<b>CybraFeriBot bisa ditingkatkan lewat jalur yang konkret, bukan sekadar "belajar sendiri".</b>\n\n` +
       `<b>Kemampuan yang sudah ada sekarang:</b>\n` +
@@ -213,9 +224,71 @@ function tryCapabilityTool(text: string): ToolResult {
   };
 }
 
+function trySelfDescribeTool(text: string): ToolResult {
+  if (!isMetaBotQuestion(text)) {
+    return { handled: false };
+  }
+
+  const lower = text.toLowerCase();
+
+  if (
+    lower.includes('fitur') ||
+    lower.includes('bisa apa') ||
+    lower.includes('fungsi') ||
+    lower.includes('untuk apa')
+  ) {
+    return {
+      handled: true,
+      toolName: 'self_describe',
+      response:
+        `<b>Fitur utama CybraFeriBot saat ini:</b>\n\n` +
+        `- menjawab chat umum dan pertanyaan teknis ringan\n` +
+        `- knowledge base lokal untuk FAQ/profil/informasi tertentu\n` +
+        `- tool lokal seperti hitung, caption, dan pengumuman\n` +
+        `- ringkas <b>PDF</b> atau <b>gambar</b>\n` +
+        `- tanya jawab berdasarkan dokumen aktif\n` +
+        `- membuat file <b>PDF</b> dan <b>DOCX</b>\n` +
+        `- dashboard admin, telemetry, dan kontrol runtime`,
+      metadata: {
+        topic: 'bot_features',
+      },
+    };
+  }
+
+  if (lower.includes('cara kerja') || lower.includes('kerjamu')) {
+    return {
+      handled: true,
+      toolName: 'self_describe',
+      response:
+        `<b>Cara kerja CybraFeriBot secara ringkas:</b>\n\n` +
+        `- menerima pesan dari Telegram lewat webhook\n` +
+        `- menyimpan user dan riwayat chat ke SQLite\n` +
+        `- merutekan permintaan ke tool lokal atau Gemini\n` +
+        `- memakai knowledge base lokal bila relevan\n` +
+        `- mencatat telemetry untuk evaluasi performa bot`,
+      metadata: {
+        topic: 'bot_workflow',
+      },
+    };
+  }
+
+  return {
+    handled: true,
+    toolName: 'self_describe',
+    response:
+      `<b>CybraFeriBot</b> adalah bot Telegram hybrid berbasis <b>Bun</b>, <b>Hono</b>, <b>SQLite</b>, dan <b>Gemini API</b>.\n\n` +
+      `Bot ini dirancang untuk membantu chat umum, drafting ringan, ringkasan dokumen, tanya jawab berbasis file, dan pembuatan PDF/DOCX.\n\n` +
+      `Kalau Kakak mau, saya juga bisa jelaskan <b>fitur</b>, <b>cara kerja</b>, atau <b>arah peningkatan</b> bot ini secara lebih spesifik.`,
+    metadata: {
+      topic: 'bot_identity',
+    },
+  };
+}
+
 export function runLocalTool(text: string, config?: Pick<AdminConfig, 'enabledTools'>) {
   const tools = [
     { name: 'faq', fn: tryCapabilityTool },
+    { name: 'faq', fn: trySelfDescribeTool },
     { name: 'math', fn: tryMathTool },
     { name: 'caption', fn: tryCaptionTool },
     { name: 'announcement', fn: tryAnnouncementTool },
