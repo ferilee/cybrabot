@@ -68,6 +68,10 @@ function isGroupChat(ctx: any) {
   return ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 }
 
+function isFromBotAccount(ctx: any) {
+  return Boolean(ctx.from?.is_bot);
+}
+
 function isAuthorizedGroupUser(ctx: any) {
   if (!isGroupChat(ctx)) {
     return true;
@@ -711,6 +715,10 @@ bot.command('admin_knowledge_delete', async (ctx) => {
 });
 
 bot.on('message:document', async (ctx) => {
+  if (isFromBotAccount(ctx)) {
+    return;
+  }
+
   const caption = ctx.message.caption || '';
   if (!shouldHandleGroupMedia(ctx, caption)) {
     return;
@@ -742,6 +750,10 @@ bot.on('message:document', async (ctx) => {
 });
 
 bot.on('message:photo', async (ctx) => {
+  if (isFromBotAccount(ctx)) {
+    return;
+  }
+
   const caption = ctx.message.caption || '';
   if (!shouldHandleGroupMedia(ctx, caption)) {
     return;
@@ -763,6 +775,10 @@ bot.on('message:photo', async (ctx) => {
 bot.on('message:text', async (ctx) => {
   const startedAt = Date.now();
   try {
+    if (isFromBotAccount(ctx)) {
+      return;
+    }
+
     const rawText = ctx.message.text;
     if (!shouldHandleGroupText(ctx, rawText)) {
       return;
