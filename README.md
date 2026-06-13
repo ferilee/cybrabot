@@ -167,6 +167,7 @@ curl -X POST "http://localhost:4129/admin/preferences/reset?token=ADMIN_TOKEN_AN
 4. **Premium Dashboard:** Antarmuka web yang modern untuk memantau aktivitas bot secara real-time.
 5. **Document AI:** Bot bisa menerima <b>PDF</b> atau <b>gambar</b>, membuat ringkasan, lalu menjawab pertanyaan tentang dokumen aktif.
 6. **Document Export:** Bot bisa membuat file <b>PDF</b> atau <b>DOCX</b> dari permintaan user dan mengirimkannya kembali ke Telegram.
+7. **Telegram Rich Messages:** Jawaban bot dikirim memakai API rich message Telegram terbaru, dengan fallback ke teks biasa bila perlu.
 
 ## 📄 Fitur Dokumen
 Alur pakainya:

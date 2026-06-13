@@ -25,6 +25,7 @@ if (token.startsWith('123456')) {
 export const bot = new Bot(token);
 
 const TELEGRAM_MESSAGE_LIMIT = 4000;
+const TELEGRAM_RICH_MESSAGE_LIMIT = 30000;
 const DOCUMENT_DOWNLOAD_DIR = '/tmp/cybrabot-documents';
 const MAX_DOCUMENT_BYTES = Number(process.env.DOCUMENT_MAX_BYTES || 20 * 1024 * 1024);
 const GROUP_ALLOWED_USER_ID = Number(process.env.GROUP_ALLOWED_USER_ID || 177517779);
@@ -40,15 +41,49 @@ function limitTelegramMessage(text: string) {
   return `${text.slice(0, TELEGRAM_MESSAGE_LIMIT - 3)}...`;
 }
 
+function limitRichTelegramMessage(text: string) {
+  if (text.length <= TELEGRAM_RICH_MESSAGE_LIMIT) {
+    return text;
+  }
+
+  return `${text.slice(0, TELEGRAM_RICH_MESSAGE_LIMIT - 3)}...`;
+}
+
+function buildReplyParameters(ctx: any) {
+  const messageId = ctx.message?.message_id;
+  if (!messageId) {
+    return undefined;
+  }
+
+  return { message_id: messageId };
+}
+
+async function sendRichTelegramMessage(ctx: any, text: string) {
+  const payload: Record<string, unknown> = {
+    chat_id: ctx.chat.id,
+    rich_message: {
+      html: limitRichTelegramMessage(text),
+    },
+  };
+
+  const replyParameters = buildReplyParameters(ctx);
+  if (replyParameters) {
+    payload.reply_parameters = replyParameters;
+  }
+
+  return ctx.api.callApi('sendRichMessage', payload as any);
+}
+
 async function replySafely(ctx: any, text: string) {
-  const limitedText = limitTelegramMessage(text);
+  const limitedText = limitRichTelegramMessage(text);
 
   try {
-    await ctx.reply(limitedText, { parse_mode: 'HTML' });
+    await sendRichTelegramMessage(ctx, limitedText);
   } catch (error: any) {
     const description = error?.description || error?.message || '';
     const isParseError =
       description.includes("can't parse entities") ||
+      description.includes('sendRichMessage') ||
       description.includes('message is too long') ||
       description.includes('Bad Request');
 
@@ -56,7 +91,12 @@ async function replySafely(ctx: any, text: string) {
       throw error;
     }
 
-    await ctx.reply(limitTelegramMessage(limitedText.replace(/<[^>]+>/g, '')));
+    const plainText = limitTelegramMessage(limitedText.replace(/<[^>]+>/g, ''));
+    try {
+      await ctx.reply(plainText, { parse_mode: 'HTML' });
+    } catch {
+      await ctx.reply(plainText);
+    }
   }
 }
 
