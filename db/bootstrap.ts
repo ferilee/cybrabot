@@ -42,10 +42,12 @@ sqlite.exec(`
     user_id INTEGER PRIMARY KEY NOT NULL,
     title TEXT,
     mime_type TEXT NOT NULL,
+    source_kind TEXT NOT NULL DEFAULT 'gemini',
     telegram_file_id TEXT,
     telegram_file_path TEXT,
     gemini_file_name TEXT,
     gemini_file_uri TEXT,
+    extracted_text TEXT,
     summary TEXT,
     created_at INTEGER DEFAULT (unixepoch()),
     updated_at INTEGER DEFAULT (unixepoch()),
@@ -58,6 +60,18 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS telemetry_created_at_idx ON telemetry_events(created_at);
   CREATE INDEX IF NOT EXISTS document_sessions_updated_at_idx ON document_sessions(updated_at);
 `);
+
+function ensureColumn(tableName: string, columnName: string, definition: string) {
+  const columns = sqlite.query(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  sqlite.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
+}
+
+ensureColumn('document_sessions', 'source_kind', "source_kind TEXT NOT NULL DEFAULT 'gemini'");
+ensureColumn('document_sessions', 'extracted_text', 'extracted_text TEXT');
 
 sqlite.close();
 

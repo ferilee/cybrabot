@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { GoogleGenAI, createPartFromUri } from '@google/genai';
 import { logEvent } from './observability';
 import type { ActiveDocumentSession } from './document-session';
+import { extractTextFromDocument, isTextDocumentMimeType } from './document-source';
+import { formatTelegramRichText } from './telegram-rich';
 
 if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
   console.warn('⚠️ GEMINI_API_KEY/GOOGLE_API_KEY is missing! Document AI features will fail until you set it.');
@@ -19,6 +21,8 @@ export type DocumentSummaryResult = {
   latencyMs: number;
   geminiFileName: string;
   geminiFileUri: string;
+  sourceKind: 'gemini' | 'text';
+  extractedText?: string;
 };
 
 function sleep(ms: number) {
@@ -40,8 +44,88 @@ async function waitForFileActive(fileName: string) {
   throw new Error('Gemini file processing timed out');
 }
 
-export async function summarizeDocumentFromPath(filePath: string, mimeType: string, displayName: string): Promise<DocumentSummaryResult> {
+function buildPromptForDocument(prompt?: string) {
+  const trimmedPrompt = prompt?.trim();
+
+  if (trimmedPrompt) {
+    return (
+      `Ikuti permintaan pengguna berikut berdasarkan isi dokumen.\n` +
+      `Jika perlu, jelaskan langkah per langkah dan tampilkan hasil akhir yang bisa langsung dipakai.\n` +
+      `Gunakan bahasa Indonesia yang jelas, ringkas, dan mudah dibaca.\n\n` +
+      `Permintaan pengguna: ${trimmedPrompt}`
+    );
+  }
+
+  return (
+    `Baca dokumen atau gambar ini dan buat ringkasan dalam bahasa Indonesia.\n` +
+    `Fokus pada:\n` +
+    `1. topik utama\n` +
+    `2. poin penting\n` +
+    `3. data/fakta penting\n` +
+    `4. kesimpulan atau tindak lanjut\n\n` +
+    `Gunakan struktur plain text yang rapi dengan heading "# ", subheading "## ", bullet "- ", dan kutipan "> ".`
+  );
+}
+
+function buildPromptForTextDocument(documentText: string, prompt?: string) {
+  const trimmedPrompt = prompt?.trim();
+
+  if (trimmedPrompt) {
+    return (
+      `Jawab permintaan pengguna berikut berdasarkan isi dokumen di bawah.\n` +
+      `Kalau dokumen berisi tabel, angka, atau soal, kerjakan dengan teliti.\n` +
+      `Jika jawabannya tidak terlihat, katakan dengan jujur.\n\n` +
+      `Permintaan pengguna: ${trimmedPrompt}\n\n` +
+      `Isi dokumen:\n${documentText}`
+    );
+  }
+
+  return (
+    `Baca dokumen di bawah lalu ringkas dalam bahasa Indonesia.\n` +
+    `Fokus pada:\n` +
+    `1. topik utama\n` +
+    `2. poin penting\n` +
+    `3. data/fakta penting\n` +
+    `4. kesimpulan atau tindak lanjut\n\n` +
+    `Isi dokumen:\n${documentText}`
+  );
+}
+
+export async function summarizeDocumentFromPath(
+  filePath: string,
+  mimeType: string,
+  displayName: string,
+  prompt?: string,
+): Promise<DocumentSummaryResult> {
   const startedAt = Date.now();
+
+  if (isTextDocumentMimeType(mimeType)) {
+    const extractedText = await extractTextFromDocument(filePath, mimeType);
+    const response = await client.models.generateContent({
+      model: documentModel,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: buildPromptForTextDocument(extractedText, prompt),
+            },
+          ],
+        },
+      ],
+    });
+
+    return {
+      summary: formatTelegramRichText(response.text?.trim() || 'Dokumen berhasil dibaca, tetapi ringkasan kosong.'),
+      model: documentModel,
+      latencyMs: Date.now() - startedAt,
+      geminiFileName: '',
+      geminiFileUri: '',
+      sourceKind: 'text',
+      extractedText,
+    };
+  }
+
   const uploaded = await client.files.upload({
     file: filePath,
     config: {
@@ -67,14 +151,7 @@ export async function summarizeDocumentFromPath(filePath: string, mimeType: stri
         parts: [
           createPartFromUri(readyFile.uri, readyFile.mimeType),
           {
-            text:
-              `Ringkas dokumen atau gambar ini dalam bahasa Indonesia.\n` +
-              `Fokus pada:\n` +
-              `1. topik utama\n` +
-              `2. poin penting\n` +
-              `3. data/fakta penting\n` +
-              `4. kesimpulan atau tindak lanjut\n\n` +
-              `Gunakan HTML sederhana yang aman untuk Telegram.`,
+            text: buildPromptForDocument(prompt),
           },
         ],
       },
@@ -82,16 +159,50 @@ export async function summarizeDocumentFromPath(filePath: string, mimeType: stri
   });
 
   return {
-    summary: response.text?.trim() || 'Dokumen berhasil diproses, tetapi ringkasan kosong.',
+    summary: formatTelegramRichText(response.text?.trim() || 'Dokumen berhasil diproses, tetapi ringkasan kosong.'),
     model: documentModel,
     latencyMs: Date.now() - startedAt,
     geminiFileName: readyFile.name || uploaded.name,
     geminiFileUri: readyFile.uri,
+    sourceKind: 'gemini',
   };
 }
 
 export async function answerQuestionAboutDocument(session: ActiveDocumentSession, question: string) {
   const startedAt = Date.now();
+
+  if (session.sourceKind === 'text') {
+    const documentText = session.extractedText?.trim();
+    if (!documentText) {
+      throw new Error('Dokumen teks aktif tidak memiliki isi yang bisa dibaca');
+    }
+
+    const response = await client.models.generateContent({
+      model: documentModel,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text:
+                `Jawab pertanyaan pengguna berdasarkan isi dokumen berikut.\n` +
+                `Kalau jawaban tidak ada di dalam dokumen, katakan dengan jujur bahwa informasi itu tidak terlihat di dokumen.\n` +
+                `Jika diminta menghitung atau menyelesaikan soal, berikan langkah dan jawaban akhirnya.\n\n` +
+                `Isi dokumen:\n${documentText}\n\n` +
+                `Pertanyaan pengguna: ${question}`,
+            },
+          ],
+        },
+      ],
+    });
+
+    return {
+      text: formatTelegramRichText(response.text?.trim() || 'Saya belum bisa menemukan jawaban yang jelas dari dokumen itu.'),
+      model: documentModel,
+      latencyMs: Date.now() - startedAt,
+      fallback: false,
+    };
+  }
 
   if (!session.geminiFileUri) {
     throw new Error('Dokumen aktif tidak memiliki referensi file Gemini');
@@ -108,7 +219,8 @@ export async function answerQuestionAboutDocument(session: ActiveDocumentSession
             text:
               `Jawab pertanyaan pengguna berdasarkan dokumen ini.\n` +
               `Jika jawabannya tidak ada di dokumen, katakan dengan jujur bahwa informasi itu tidak terlihat di dokumen.\n` +
-              `Gunakan bahasa Indonesia yang jelas dan HTML sederhana yang aman untuk Telegram.\n\n` +
+              `Jika diminta menghitung atau menyelesaikan soal dari PDF/gambar, kerjakan dengan langkah yang benar dan beri jawaban final.\n` +
+              `Gunakan struktur plain text yang rapi dengan heading "# ", bullet "- ", kutipan "> ", atau code fence jika perlu.\n\n` +
               `Pertanyaan pengguna: ${question}`,
           },
         ],
@@ -117,7 +229,7 @@ export async function answerQuestionAboutDocument(session: ActiveDocumentSession
   });
 
   return {
-    text: response.text?.trim() || 'Saya belum bisa menemukan jawaban yang jelas dari dokumen itu.',
+    text: formatTelegramRichText(response.text?.trim() || 'Saya belum bisa menemukan jawaban yang jelas dari dokumen itu.'),
     model: documentModel,
     latencyMs: Date.now() - startedAt,
     fallback: false,

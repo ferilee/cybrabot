@@ -4,6 +4,7 @@ import type { AdminConfig } from './admin-config';
 import { getKnowledgeContext } from './knowledge';
 import { logEvent } from './observability';
 import { formatPreferenceInstruction, type UserPreferences } from './preferences';
+import { formatTelegramRichText } from './telegram-rich';
 
 if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
   console.warn('⚠️ GEMINI_API_KEY/GOOGLE_API_KEY is missing! AI responses will fail until you set it.');
@@ -53,13 +54,14 @@ Respond with ONLY ONE word: 'technical' if it's about math, code, or admin tasks
 const casualInstructions = `Anda adalah @CybraFeriBot, asisten pintar futuristik buatan Feri Lee.
 Gunakan bahasa Indonesia yang santai, alami, namun tetap sopan.
 Panggil pengguna dengan sebutan "Kakak".
-PENTING: Jawaban akan dikirim sebagai Telegram Rich Message HTML. Gunakan struktur yang rapi:
-- <b>...</b> untuk penekanan
-- <i>...</i> untuk penjelasan tambahan
-- <blockquote>...</blockquote> untuk kutipan atau catatan penting
-- <pre><code>...</code></pre> untuk potongan kode atau format terstruktur
-- <tg-spoiler>...</tg-spoiler> untuk detail yang opsional
-JANGAN gunakan markdown (*).
+PENTING: Tulis jawaban dalam plain text terstruktur yang nanti akan diformat oleh bot menjadi Telegram Rich Message HTML.
+Gunakan pola berikut bila relevan:
+- baris judul utama diawali "# "
+- subjudul diawali "## "
+- bullet diawali "- "
+- kutipan diawali "> "
+- blok kode memakai triple backticks
+JANGAN gunakan HTML mentah.
 
 PENTING: Jika ada yang bertanya siapa itu Feri Lee (atau Mas Feri), gunakan informasi berikut:
 Mas Feri Dwi Hermawan (atau Mas Feri Lee) adalah sosok "Guru SMK Paket Lengkap".
@@ -75,11 +77,14 @@ Gunakan bahasa Indonesia yang jelas, ringkas, dan langsung ke solusi.
 Panggil pengguna dengan sebutan "Kakak" bila terasa natural.
 Kalau pengguna meminta dibuatkan sesuatu, jangan hanya memberi komentar umum; berikan hasil kerja nyata, langkah, struktur, contoh, atau draft yang bisa dipakai.
 Kalau informasi kurang, buat asumsi yang wajar dan sebutkan asumsi itu singkat di awal.
-PENTING: Jawaban akan dikirim sebagai Telegram Rich Message HTML. Gunakan struktur yang rapi:
-- <b>...</b> untuk inti jawaban
-- <blockquote>...</blockquote> untuk ringkasan atau catatan penting
-- <pre><code>...</code></pre> untuk contoh, command, atau template
-- <tg-spoiler>...</tg-spoiler> bila ada detail tambahan
+PENTING: Tulis jawaban dalam plain text terstruktur yang nanti akan diformat oleh bot menjadi Telegram Rich Message HTML.
+Gunakan pola berikut bila relevan:
+- baris judul utama diawali "# "
+- subjudul diawali "## "
+- bullet diawali "- "
+- kutipan diawali "> "
+- blok kode memakai triple backticks
+JANGAN gunakan HTML mentah.
 Jangan mengarang fakta spesifik yang tidak diketahui.`;
 
 const documentDraftInstructions = `Anda adalah @CybraFeriBot, asisten yang menyiapkan isi dokumen untuk diekspor menjadi PDF atau DOCX.
@@ -158,7 +163,7 @@ export async function generateResponse(
       `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Pesan terbaru user:\n${message}`
     );
     return {
-      text: result.text,
+      text: formatTelegramRichText(result.text),
       model: chatModel,
       latencyMs: result.latencyMs,
       knowledgeMatches: knowledge.matches,
@@ -192,7 +197,7 @@ export async function generateTechnicalResponse(
       `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
     );
     return {
-      text: result.text,
+      text: formatTelegramRichText(result.text),
       model: chatModel,
       latencyMs: result.latencyMs,
       knowledgeMatches: knowledge.matches,

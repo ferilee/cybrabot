@@ -396,6 +396,7 @@ async function processIncomingDocument(ctx: any, input: {
   fileName: string;
   mimeType: string;
   userFacingType: 'pdf' | 'image';
+  prompt?: string;
 }) {
   const startedAt = Date.now();
   const userId = ctx.from.id;
@@ -422,15 +423,17 @@ async function processIncomingDocument(ctx: any, input: {
     const downloaded = await downloadTelegramFile(input.fileId, input.fileName, input.mimeType);
     localPath = downloaded.localPath;
 
-    const summary = await summarizeDocumentFromPath(localPath, input.mimeType, input.fileName);
+    const summary = await summarizeDocumentFromPath(localPath, input.mimeType, input.fileName, input.prompt);
     await saveActiveDocumentSession({
       userId,
       title: input.fileName,
       mimeType: input.mimeType,
+      sourceKind: summary.sourceKind,
       telegramFileId: input.fileId,
       telegramFilePath: downloaded.telegramFilePath,
       geminiFileName: summary.geminiFileName,
       geminiFileUri: summary.geminiFileUri,
+      extractedText: summary.extractedText,
       summary: summary.summary,
     });
 
@@ -445,7 +448,7 @@ async function processIncomingDocument(ctx: any, input: {
     const reply =
       `${summary.summary}\n\n` +
       `<b>Dokumen aktif:</b> ${input.fileName}\n` +
-      `Untuk bertanya tentang dokumen ini, kirim <b>dokumen: pertanyaan Anda</b> atau <b>/dokumen pertanyaan Anda</b>.`;
+      `Untuk bertanya tentang dokumen ini, kirim <b>dokumen: pertanyaan Anda</b>, <b>/dokumen pertanyaan Anda</b>, atau pakai pertanyaan natural yang jelas merujuk ke dokumen aktif.`;
 
     await replySafely(ctx, reply);
     await db.insert(messages).values({
@@ -786,6 +789,7 @@ bot.on('message:document', async (ctx) => {
     fileName,
     mimeType,
     userFacingType: mimeType === 'application/pdf' ? 'pdf' : 'image',
+    prompt: normalizeIncomingText(caption, ctx) || undefined,
   });
 });
 
@@ -809,6 +813,7 @@ bot.on('message:photo', async (ctx) => {
     fileName: `photo-${photo.file_unique_id}.jpg`,
     mimeType: 'image/jpeg',
     userFacingType: 'image',
+    prompt: normalizeIncomingText(caption, ctx) || undefined,
   });
 });
 
