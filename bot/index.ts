@@ -262,6 +262,8 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! ðŸš
     }
   } catch (error) {
     await logEvent('message.failed', {
+      userId: ctx?.from?.id,
+      chatId: ctx?.chat?.id,
       error: String(error),
       durationMs: Date.now() - startedAt,
     }, 'error');

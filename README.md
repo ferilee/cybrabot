@@ -62,6 +62,7 @@ Setelah dijalankan, Anda dapat mengakses:
 - **Webhook Endpoint:** `http://localhost:4129/api/webhook`
 - **Admin Config GET:** `GET /admin/config?token=...`
 - **Admin Config POST:** `POST /admin/config?token=...`
+- **Admin Insights:** `GET /admin/insights?token=...`
 - **Knowledge List:** `GET /admin/knowledge?token=...`
 - **Knowledge Upsert:** `POST /admin/knowledge?token=...`
 - **Knowledge Delete:** `DELETE /admin/knowledge/:id?token=...`

@@ -26,15 +26,11 @@ export async function logEvent(event: string, payload: LogPayload = {}, level: L
 
   if (level === 'error') {
     console.error(serialized);
-    return;
-  }
-
-  if (level === 'warn') {
+  } else if (level === 'warn') {
     console.warn(serialized);
-    return;
+  } else {
+    console.log(serialized);
   }
-
-  console.log(serialized);
 
   if (!persistedEvents.has(event)) {
     return;

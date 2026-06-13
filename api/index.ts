@@ -12,6 +12,167 @@ const app = new Hono();
 
 app.use('*', logger());
 
+function parseTelemetryPayload(payload: string | null) {
+  if (!payload) {
+    return {} as Record<string, unknown>;
+  }
+
+  try {
+    return JSON.parse(payload) as Record<string, unknown>;
+  } catch {
+    return {} as Record<string, unknown>;
+  }
+}
+
+function buildTelemetrySummaries(items: typeof telemetryEvents.$inferSelect[]) {
+  const parsedTelemetry = items.map((item) => ({
+    item,
+    payload: parseTelemetryPayload(item.payload),
+  }));
+
+  const intentCounts = parsedTelemetry
+    .filter(({ item }) => item.event === 'message.intent_classified')
+    .reduce<Record<string, number>>((acc, entry) => {
+      const intent = typeof entry.payload.intent === 'string' ? entry.payload.intent : 'unknown';
+      acc[intent] = (acc[intent] || 0) + 1;
+      return acc;
+    }, {});
+
+  const toolCounts = parsedTelemetry
+    .filter(({ item }) => item.event === 'message.tool_used')
+    .reduce<Record<string, number>>((acc, entry) => {
+      const toolName = typeof entry.payload.toolName === 'string' ? entry.payload.toolName : 'unknown';
+      acc[toolName] = (acc[toolName] || 0) + 1;
+      return acc;
+    }, {});
+
+  const aiEvents = parsedTelemetry
+    .map((entry) => ({
+      item: entry.item,
+      payload: entry.payload as {
+        latencyMs?: number;
+        knowledgeMatches?: string[];
+        fallback?: boolean;
+      }
+    }))
+    .filter(({ item }) => item.event === 'message.ai_used');
+
+  const averageAiLatency = aiEvents.length
+    ? Math.round(aiEvents.reduce((sum, entry) => sum + (entry.payload.latencyMs || 0), 0) / aiEvents.length)
+    : 0;
+  const fallbackCount = aiEvents.filter((entry) => entry.payload.fallback).length;
+  const knowledgeCounts = aiEvents.reduce<Record<string, number>>((acc, entry) => {
+    for (const knowledgeId of entry.payload.knowledgeMatches || []) {
+      acc[knowledgeId] = (acc[knowledgeId] || 0) + 1;
+    }
+    return acc;
+  }, {});
+
+  const completionEvents = parsedTelemetry
+    .filter(({ item }) => item.event === 'message.completed')
+    .map(({ item, payload }) => ({
+      createdAt: item.createdAt,
+      route: typeof payload.route === 'string' ? payload.route : 'unknown',
+      durationMs: typeof payload.durationMs === 'number' ? payload.durationMs : 0,
+      userId: typeof payload.userId === 'number' ? payload.userId : null,
+    }));
+
+  const routeStats = completionEvents.reduce<Record<string, { count: number; totalDuration: number }>>((acc, entry) => {
+    if (!acc[entry.route]) {
+      acc[entry.route] = { count: 0, totalDuration: 0 };
+    }
+    const routeStat = acc[entry.route];
+    if (routeStat) {
+      routeStat.count += 1;
+      routeStat.totalDuration += entry.durationMs;
+    }
+    return acc;
+  }, {});
+
+  const routeBreakdown = Object.entries(routeStats)
+    .map(([route, stats]) => ({
+      route,
+      count: stats.count,
+      avgDurationMs: stats.count ? Math.round(stats.totalDuration / stats.count) : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const recentFailures = parsedTelemetry
+    .filter(({ item }) => item.event === 'message.failed')
+    .slice(0, 10)
+    .map(({ item, payload }) => ({
+      createdAt: item.createdAt?.toISOString?.() || null,
+      userId: typeof payload.userId === 'number' ? payload.userId : null,
+      chatId: typeof payload.chatId === 'number' ? payload.chatId : null,
+      error: typeof payload.error === 'string' ? payload.error : 'Unknown error',
+      durationMs: typeof payload.durationMs === 'number' ? payload.durationMs : null,
+    }));
+
+  return {
+    intentCounts,
+    toolCounts,
+    averageAiLatency,
+    fallbackCount,
+    knowledgeCounts,
+    routeBreakdown,
+    recentFailures,
+  };
+}
+
+async function getTopUsers(limit = 10) {
+  const userMessages = await db.query.messages.findMany({
+    where: undefined,
+    with: {
+      user: true,
+    },
+  });
+
+  const stats = userMessages.reduce<Record<number, {
+    userId: number;
+    username: string | null;
+    firstName: string | null;
+    messageCount: number;
+    botReplyCount: number;
+    lastSeenAt: Date | null;
+  }>>((acc, message) => {
+    if (!message.userId) {
+      return acc;
+    }
+
+    const existing = acc[message.userId] || {
+      userId: message.userId,
+      username: message.user?.username ?? null,
+      firstName: message.user?.firstName ?? null,
+      messageCount: 0,
+      botReplyCount: 0,
+      lastSeenAt: null,
+    };
+
+    if (message.role === 'user') {
+      existing.messageCount += 1;
+    }
+
+    if (message.role === 'bot') {
+      existing.botReplyCount += 1;
+    }
+
+    if (!existing.lastSeenAt || (message.timestamp && message.timestamp > existing.lastSeenAt)) {
+      existing.lastSeenAt = message.timestamp ?? existing.lastSeenAt;
+    }
+
+    acc[message.userId] = existing;
+    return acc;
+  }, {});
+
+  return Object.values(stats)
+    .sort((a, b) => b.messageCount - a.messageCount || b.botReplyCount - a.botReplyCount)
+    .slice(0, limit)
+    .map((item) => ({
+      ...item,
+      lastSeenAt: item.lastSeenAt?.toISOString?.() || null,
+    }));
+}
+
 function renderAdminPage() {
   return `
     <!DOCTYPE html>
@@ -198,6 +359,22 @@ function renderAdminPage() {
 
         <div class="grid">
           <div class="panel">
+            <h2>Analytics</h2>
+            <div id="routeList" class="list">
+              <div class="hint">Belum dimuat.</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>Top Users</h2>
+            <div id="topUsersList" class="list">
+              <div class="hint">Belum dimuat.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="panel">
             <h2>Knowledge Editor</h2>
             <label>
               Document ID
@@ -225,6 +402,13 @@ function renderAdminPage() {
             </div>
           </div>
         </div>
+
+        <div class="panel">
+          <h2>Recent Failures</h2>
+          <div id="failureList" class="list">
+            <div class="hint">Belum dimuat.</div>
+          </div>
+        </div>
       </div>
 
       <script>
@@ -235,6 +419,9 @@ function renderAdminPage() {
         const knowledgeStatus = document.getElementById('knowledgeStatus');
         const preferencesStatus = document.getElementById('preferencesStatus');
         const knowledgeList = document.getElementById('knowledgeList');
+        const routeList = document.getElementById('routeList');
+        const topUsersList = document.getElementById('topUsersList');
+        const failureList = document.getElementById('failureList');
 
         tokenInput.value = params.get('token') || '';
 
@@ -310,6 +497,49 @@ function renderAdminPage() {
           }).join('');
         }
 
+        async function loadInsights() {
+          const data = await api('/admin/insights');
+          const routes = Array.isArray(data.routeBreakdown) ? data.routeBreakdown : [];
+          const topUsers = Array.isArray(data.topUsers) ? data.topUsers : [];
+          const failures = Array.isArray(data.recentFailures) ? data.recentFailures : [];
+
+          routeList.innerHTML = routes.length
+            ? routes.map((item) => \`
+                <div class="item">
+                  <div class="row" style="justify-content: space-between;">
+                    <strong>\${escapeHtml(item.route || 'unknown')}</strong>
+                    <span>\${item.count || 0} hits</span>
+                  </div>
+                  <p>Avg duration: \${item.avgDurationMs || 0} ms</p>
+                </div>
+              \`).join('')
+            : '<div class="hint">Belum ada data route.</div>';
+
+          topUsersList.innerHTML = topUsers.length
+            ? topUsers.map((item) => \`
+                <div class="item">
+                  <div class="row" style="justify-content: space-between;">
+                    <strong>\${escapeHtml(item.firstName || item.username || String(item.userId))}</strong>
+                    <span>\${item.messageCount || 0} pesan user</span>
+                  </div>
+                  <p>User ID: \${item.userId} | Bot replies: \${item.botReplyCount || 0}</p>
+                </div>
+              \`).join('')
+            : '<div class="hint">Belum ada data user.</div>';
+
+          failureList.innerHTML = failures.length
+            ? failures.map((item) => \`
+                <div class="item">
+                  <div class="row" style="justify-content: space-between;">
+                    <strong>User: \${item.userId || '-'}</strong>
+                    <span>\${escapeHtml(item.createdAt || '-')}</span>
+                  </div>
+                  <p>\${escapeHtml(item.error || 'Unknown error')}</p>
+                </div>
+              \`).join('')
+            : '<div class="hint">Belum ada failure yang terekam.</div>';
+        }
+
         window.editKnowledge = (item) => {
           document.getElementById('knowledgeId').value = item.id || '';
           document.getElementById('knowledgeTitle').value = item.title || '';
@@ -333,7 +563,7 @@ function renderAdminPage() {
         document.getElementById('loadAllButton').addEventListener('click', async () => {
           try {
             setStatus(globalStatus, 'Memuat state runtime...');
-            await Promise.all([loadConfig(), loadKnowledge()]);
+            await Promise.all([loadConfig(), loadKnowledge(), loadInsights()]);
             setStatus(globalStatus, 'State runtime berhasil dimuat.', 'ok');
           } catch (error) {
             setStatus(globalStatus, error.message, 'error');
@@ -433,46 +663,14 @@ app.get('/', async (c) => {
   const totalUsers = userCount[0]?.value ?? 0;
   const totalMessages = msgCount[0]?.value ?? 0;
   const botMessages = recentMessages.filter((message) => message.role === 'bot');
-  const parsedTelemetry = recentTelemetry.map((item) => {
-    let payload: Record<string, unknown> = {};
-
-    try {
-      payload = item.payload ? JSON.parse(item.payload) : {};
-    } catch {
-      payload = {};
-    }
-
-    return { item, payload };
-  });
-  const intentCounts = parsedTelemetry
-    .filter(({ item }) => item.event === 'message.intent_classified')
-    .reduce<Record<string, number>>((acc, entry) => {
-      const payload = entry.payload as { intent?: string };
-      const intent = payload.intent || 'unknown';
-      acc[intent] = (acc[intent] || 0) + 1;
-      return acc;
-    }, {});
-  const toolCounts = parsedTelemetry
-    .filter(({ item }) => item.event === 'message.tool_used')
-    .reduce<Record<string, number>>((acc, entry) => {
-      const payload = entry.payload as { toolName?: string };
-      const toolName = payload.toolName || 'unknown';
-      acc[toolName] = (acc[toolName] || 0) + 1;
-      return acc;
-    }, {});
-  const aiEvents = parsedTelemetry
-    .map((entry) => ({ item: entry.item, payload: entry.payload as { latencyMs?: number; knowledgeMatches?: string[]; fallback?: boolean } }))
-    .filter(({ item }) => item.event === 'message.ai_used');
-  const averageAiLatency = aiEvents.length
-    ? Math.round(aiEvents.reduce((sum, entry) => sum + (entry.payload.latencyMs || 0), 0) / aiEvents.length)
-    : 0;
-  const fallbackCount = aiEvents.filter((entry) => entry.payload.fallback).length;
-  const knowledgeCounts = aiEvents.reduce<Record<string, number>>((acc, entry) => {
-    for (const knowledgeId of entry.payload.knowledgeMatches || []) {
-      acc[knowledgeId] = (acc[knowledgeId] || 0) + 1;
-    }
-    return acc;
-  }, {});
+  const telemetrySummary = buildTelemetrySummaries(recentTelemetry);
+  const {
+    intentCounts,
+    toolCounts,
+    knowledgeCounts,
+    averageAiLatency,
+    fallbackCount,
+  } = telemetrySummary;
   const formatSummaryList = (items: Record<string, number>, emptyLabel: string) => {
     const entries = Object.entries(items)
       .sort((a, b) => b[1] - a[1])
@@ -691,6 +889,27 @@ app.get('/', async (c) => {
 });
 
 app.get('/admin', (c) => c.html(renderAdminPage()));
+
+app.get('/admin/insights', async (c) => {
+  const token = c.req.query('token') || c.req.header('x-admin-token');
+  if (!isValidAdminToken(token)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const recentTelemetry = await db.query.telemetryEvents.findMany({
+    limit: 500,
+    orderBy: [desc(telemetryEvents.createdAt), desc(telemetryEvents.id)],
+  });
+
+  const summaries = buildTelemetrySummaries(recentTelemetry);
+  const topUsers = await getTopUsers(10);
+
+  return c.json({
+    topUsers,
+    routeBreakdown: summaries.routeBreakdown,
+    recentFailures: summaries.recentFailures,
+  });
+});
 
 app.get('/admin/config', async (c) => {
   const token = c.req.query('token') || c.req.header('x-admin-token');
