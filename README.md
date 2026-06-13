@@ -69,6 +69,7 @@ Setelah dijalankan, Anda dapat mengakses:
 - **Admin Config GET:** `GET /admin/config?token=...`
 - **Admin Config POST:** `POST /admin/config?token=...`
 - **Admin Insights:** `GET /admin/insights?token=...`
+- **Admin Quota:** `GET /admin/quota?token=...`
 - **Knowledge List:** `GET /admin/knowledge?token=...`
 - **Knowledge Upsert:** `POST /admin/knowledge?token=...`
 - **Knowledge Delete:** `DELETE /admin/knowledge/:id?token=...`
@@ -135,6 +136,7 @@ Perintah yang tersedia:
 - `/admin_self [identity|features|workflow|improvement]` lalu isi baru di baris berikutnya
 - `/admin_knowledge_add` lalu isi `id`, `judul`, dan `konten` dalam format multiline
 - `/admin_knowledge_delete id-dokumen`
+- `/quota` untuk mengecek status kuota provider yang dipakai model aktif
 
 Contoh:
 ```text
@@ -155,6 +157,12 @@ CybraFeriBot dapat membaca PDF dan gambar, meringkas dokumen, menjawab pertanyaa
 FAQ Jam Operasional
 Sekolah buka Senin sampai Jumat pukul 07.00-15.00.
 ```
+
+```text
+/quota
+```
+
+Di panel admin web, status kuota provider juga tersedia di bagian **Provider Quota**.
 
 Contoh tambah/update knowledge:
 ```bash

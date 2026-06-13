@@ -3,6 +3,7 @@ import { logger } from 'hono/logger';
 import { handleUpdate } from '../bot';
 import { getAdminConfig, isValidAdminToken, saveAdminConfig } from '../lib/admin-config';
 import { deleteKnowledgeDocument, listKnowledgeDocuments, saveKnowledgeDocument } from '../lib/knowledge';
+import { getProviderQuotaStatus } from '../lib/provider-status';
 import { resetUserPreferences } from '../lib/preferences';
 import { db } from '../db';
 import { users, messages, telemetryEvents } from '../db/schema';
@@ -377,6 +378,15 @@ function renderAdminPage() {
           </div>
         </div>
 
+        <div class="panel">
+          <h2>Provider Quota</h2>
+          <div class="toolbar" style="margin-top: 0;">
+            <button id="loadQuotaButton" type="button" class="secondary">Refresh Quota</button>
+          </div>
+          <div id="quotaStatus" class="status">Belum dimuat.</div>
+          <div id="quotaDetail" class="item" style="margin-top: 1rem; display: none;"></div>
+        </div>
+
         <div class="grid">
           <div class="panel">
             <h2>Analytics</h2>
@@ -438,6 +448,8 @@ function renderAdminPage() {
         const configStatus = document.getElementById('configStatus');
         const knowledgeStatus = document.getElementById('knowledgeStatus');
         const preferencesStatus = document.getElementById('preferencesStatus');
+        const quotaStatus = document.getElementById('quotaStatus');
+        const quotaDetail = document.getElementById('quotaDetail');
         const knowledgeList = document.getElementById('knowledgeList');
         const routeList = document.getElementById('routeList');
         const topUsersList = document.getElementById('topUsersList');
@@ -564,6 +576,36 @@ function renderAdminPage() {
             : '<div class="hint">Belum ada failure yang terekam.</div>';
         }
 
+        async function loadQuota() {
+          const data = await api('/admin/quota');
+          const status = data.providerStatus || {};
+          const activeModel = data.activeModel || 'unknown';
+          const provider = data.provider || 'unknown';
+
+          if (status.ok) {
+            setStatus(quotaStatus, 'Kuota provider berhasil dibaca.', 'ok');
+            quotaDetail.style.display = 'block';
+            quotaDetail.innerHTML = \`
+              <div class="row" style="justify-content: space-between;">
+                <strong>\${escapeHtml(provider)} / \${escapeHtml(activeModel)}</strong>
+                <span>\${escapeHtml(status.endpoint || '-')}</span>
+              </div>
+              <p>\${escapeHtml(status.summary || 'No summary')}</p>
+            \`;
+            return;
+          }
+
+          setStatus(quotaStatus, status.summary || 'Kuota provider tidak bisa dibaca.', 'error');
+          quotaDetail.style.display = 'block';
+          quotaDetail.innerHTML = \`
+            <div class="row" style="justify-content: space-between;">
+              <strong>\${escapeHtml(provider)} / \${escapeHtml(activeModel)}</strong>
+              <span>\${escapeHtml(status.endpoint || '-')}</span>
+            </div>
+            <p>\${escapeHtml(status.summary || 'No summary')}</p>
+          \`;
+        }
+
         window.editKnowledge = (item) => {
           document.getElementById('knowledgeId').value = item.id || '';
           document.getElementById('knowledgeTitle').value = item.title || '';
@@ -587,7 +629,7 @@ function renderAdminPage() {
         document.getElementById('loadAllButton').addEventListener('click', async () => {
           try {
             setStatus(globalStatus, 'Memuat state runtime...');
-            await Promise.all([loadConfig(), loadKnowledge(), loadInsights()]);
+            await Promise.all([loadConfig(), loadKnowledge(), loadInsights(), loadQuota()]);
             setStatus(globalStatus, 'State runtime berhasil dimuat.', 'ok');
           } catch (error) {
             setStatus(globalStatus, error.message, 'error');
@@ -665,6 +707,15 @@ function renderAdminPage() {
             setStatus(preferencesStatus, 'Preferensi user berhasil direset.', 'ok');
           } catch (error) {
             setStatus(preferencesStatus, error.message, 'error');
+          }
+        });
+
+        document.getElementById('loadQuotaButton').addEventListener('click', async () => {
+          try {
+            setStatus(quotaStatus, 'Memuat status kuota...');
+            await loadQuota();
+          } catch (error) {
+            setStatus(quotaStatus, error.message, 'error');
           }
         });
       </script>
@@ -939,6 +990,28 @@ app.get('/admin/insights', async (c) => {
     topUsers,
     routeBreakdown: summaries.routeBreakdown,
     recentFailures: summaries.recentFailures,
+  });
+});
+
+app.get('/admin/quota', async (c) => {
+  const token = c.req.query('token') || c.req.header('x-admin-token');
+  if (!isValidAdminToken(token)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const adminConfig = await getAdminConfig();
+  const status = await getProviderQuotaStatus();
+  const activeModel = adminConfig.models.chat;
+  const lower = activeModel.trim().toLowerCase();
+  const provider =
+    lower.startsWith('tokenrouter:') || lower.startsWith('openai:') || lower.startsWith('openai-compatible:')
+      ? 'OpenAI-compatible'
+      : 'Gemini';
+
+  return c.json({
+    provider,
+    activeModel,
+    providerStatus: status,
   });
 });
 

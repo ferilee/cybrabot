@@ -12,9 +12,11 @@ import { answerQuestionAboutDocument, explainDocumentFeatureError, summarizeDocu
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
 import { cleanupExportFile, detectDocumentExportRequest, materializeExportFile } from '../lib/document-export';
 import { deleteKnowledgeDocument, saveKnowledgeDocument } from '../lib/knowledge';
+import { getProviderQuotaStatus } from '../lib/provider-status';
 import { logEvent } from '../lib/observability';
 import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
+import { escapeHtml } from '../lib/telegram-rich';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -461,6 +463,20 @@ function getModelReadinessText() {
     ? `<b>Status provider OpenAI-compatible:</b> siap`
     : `<b>Status provider OpenAI-compatible:</b> belum siap\n` +
       `Isi <code>OPENAI_API_KEY</code> dan <code>OPENAI_BASE_URL=https://api.tokenrouter.com/v1</code>.`;
+}
+
+function describeModelProvider(model: string) {
+  const lower = model.trim().toLowerCase();
+
+  if (lower.startsWith('tokenrouter:') || lower.startsWith('openai:') || lower.startsWith('openai-compatible:')) {
+    return 'OpenAI-compatible';
+  }
+
+  if (lower.startsWith('gemini:')) {
+    return 'Gemini';
+  }
+
+  return 'Gemini';
 }
 
 function stripHtmlMarkup(text: string) {
@@ -1010,6 +1026,31 @@ bot.command('models', async (ctx) => {
     `- document: <code>${config.models.document}</code>\n\n` +
     `${getModelReadinessText()}\n\n` +
     `${getAvailableModelsText()}`
+  );
+});
+
+bot.command('quota', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const config = await getAdminConfig();
+  const status = await getProviderQuotaStatus();
+  const chatProvider = describeModelProvider(config.models.chat);
+
+  const statusText = status.ok
+    ? `<b>Status kuota provider:</b> tersedia\n<b>Endpoint:</b> <code>${escapeHtml(status.endpoint)}</code>\n\n<pre>${escapeHtml(status.summary)}</pre>`
+    : `<b>Status kuota provider:</b> belum bisa dibaca\n${status.endpoint ? `<b>Endpoint dicek:</b> <code>${escapeHtml(status.endpoint)}</code>\n` : ''}\n<pre>${escapeHtml(status.summary)}</pre>`;
+
+  await replySafely(
+    ctx,
+    `<b>Status Kuota Token</b>\n\n` +
+    `<b>Model chat aktif:</b> <code>${escapeHtml(config.models.chat)}</code>\n` +
+    `<b>Provider chat:</b> ${escapeHtml(chatProvider)}\n` +
+    `<b>Model intent:</b> <code>${escapeHtml(config.models.intent)}</code>\n` +
+    `<b>Model dokumen:</b> <code>${escapeHtml(config.models.document)}</code>\n\n` +
+    `${statusText}\n\n` +
+    `<i>Catatan: jika model chat masih Gemini, kuota TokenRouter/OpenAI-compatible memang tidak relevan.</i>`
   );
 });
 
