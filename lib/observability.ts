@@ -15,6 +15,7 @@ const persistedEvents = new Set([
   'document.received',
   'document.summarized',
   'document.question_answered',
+  'document.exported',
 ]);
 
 export async function logEvent(event: string, payload: LogPayload = {}, level: LogLevel = 'info') {

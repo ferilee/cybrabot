@@ -6,10 +6,11 @@ import { db } from '../db';
 import { users, messages } from '../db/schema';
 import { desc, eq } from 'drizzle-orm';
 import { analyzeText } from '../lib/nlp';
-import { generateResponse, generateTechnicalResponse, getIntent, type ChatHistoryItem } from '../lib/ai';
+import { generateDocumentDraft, generateResponse, generateTechnicalResponse, getIntent, type ChatHistoryItem } from '../lib/ai';
 import { getAdminConfig } from '../lib/admin-config';
 import { answerQuestionAboutDocument, explainDocumentFeatureError, summarizeDocumentFromPath } from '../lib/document-ai';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
+import { cleanupExportFile, detectDocumentExportRequest, materializeExportFile } from '../lib/document-export';
 import { logEvent } from '../lib/observability';
 import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
@@ -250,6 +251,85 @@ async function processIncomingDocument(ctx: any, input: {
   }
 }
 
+async function processDocumentExport(ctx: any, requestText: string, startedAt: number) {
+  const exportRequest = detectDocumentExportRequest(requestText);
+  if (!exportRequest) {
+    return false;
+  }
+
+  const userId = ctx.from.id;
+  const history = await getConversationHistory(userId);
+  const preferences = await getUserPreferences(userId);
+  const adminConfig = await getAdminConfig();
+
+  await replySafely(
+    ctx,
+    `Sedang menyiapkan file <b>${exportRequest.format.toUpperCase()}</b> untuk permintaan Kakak.`
+  );
+
+  let outputPath = '';
+  try {
+    const draft = await generateDocumentDraft(exportRequest.prompt, history, preferences, adminConfig);
+    const exported = await materializeExportFile(draft.title || exportRequest.title, draft.text, exportRequest.format);
+    outputPath = exported.outputPath;
+
+    await ctx.replyWithDocument(exported.inputFile, {
+      caption:
+        `Berikut file <b>${exportRequest.format.toUpperCase()}</b> yang saya buat.\n` +
+        `<b>Judul:</b> ${draft.title || exportRequest.title}`,
+      parse_mode: 'HTML',
+    });
+
+    await db.insert(messages).values({
+      userId,
+      content: requestText,
+      role: 'user',
+      intent: `export_${exportRequest.format}`,
+    });
+
+    await db.insert(messages).values({
+      userId,
+      content: `[generated ${exportRequest.format}: ${draft.title || exportRequest.title}]`,
+      role: 'bot',
+      intent: `export_${exportRequest.format}`,
+    });
+
+    await logEvent('document.exported', {
+      userId,
+      format: exportRequest.format,
+      title: draft.title || exportRequest.title,
+      model: draft.model,
+      latencyMs: draft.latencyMs,
+      fallback: draft.fallback,
+    });
+
+    await logEvent('message.completed', {
+      userId,
+      route: `document_export_${exportRequest.format}`,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return true;
+  } catch (error) {
+    await logEvent('message.failed', {
+      userId,
+      chatId: ctx.chat.id,
+      feature: 'document_export',
+      error: String(error),
+      durationMs: Date.now() - startedAt,
+    }, 'error');
+    await replySafely(
+      ctx,
+      'Maaf, saya belum berhasil membuat file yang diminta. Coba ulangi dengan permintaan yang lebih spesifik.'
+    );
+    return true;
+  } finally {
+    if (outputPath) {
+      cleanupExportFile(outputPath);
+    }
+  }
+}
+
 async function getConversationHistory(userId: number): Promise<ChatHistoryItem[]> {
   const recentMessages = await db.query.messages.findMany({
     where: eq(messages.userId, userId),
@@ -355,6 +435,10 @@ bot.on('message:text', async (ctx) => {
     const text = ctx.message.text;
     const userId = ctx.from.id;
     await ensureUserRegistered(ctx.from);
+
+    if (await processDocumentExport(ctx, text, startedAt)) {
+      return;
+    }
 
     await logEvent('message.received', {
       userId,

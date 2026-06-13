@@ -121,6 +121,7 @@ curl -X POST "http://localhost:4129/admin/preferences/reset?token=ADMIN_TOKEN_AN
 3. **Persisten Data:** Semua interaksi disimpan ke SQLite menggunakan Drizzle ORM.
 4. **Premium Dashboard:** Antarmuka web yang modern untuk memantau aktivitas bot secara real-time.
 5. **Document AI:** Bot bisa menerima <b>PDF</b> atau <b>gambar</b>, membuat ringkasan, lalu menjawab pertanyaan tentang dokumen aktif.
+6. **Document Export:** Bot bisa membuat file <b>PDF</b> atau <b>DOCX</b> dari permintaan user dan mengirimkannya kembali ke Telegram.
 
 ## 📄 Fitur Dokumen
 Alur pakainya:
@@ -136,6 +137,17 @@ Catatan:
 - Saat ini bot hanya memproses PDF dan gambar.
 - Jawaban dokumen diambil dari file yang diunggah ke Gemini Files API.
 - Referensi file di Gemini bersifat sementara, jadi bila sudah lama, unggah ulang dokumennya.
+
+## 🧾 Ekspor PDF / DOCX
+Contoh permintaan:
+- `buatkan PDF surat resmi undangan rapat wali murid`
+- `tolong buat docx proposal kegiatan class meeting`
+- `buatkan file word notulen rapat guru dengan format rapi`
+
+Cara kerja:
+1. Bot menyusun isi dokumen dengan Gemini.
+2. Bot mengubah hasilnya menjadi file <b>PDF</b> atau <b>DOCX</b>.
+3. Bot mengirim file tersebut kembali ke chat Telegram.
 
 ---
 Dikembangkan oleh **Feri Lee** dengan ❤️ dan ⚡ Bun.

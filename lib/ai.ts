@@ -38,6 +38,14 @@ export type GenerationResult = {
   fallback: boolean;
 };
 
+export type DocumentDraftResult = {
+  text: string;
+  title: string;
+  model: string;
+  latencyMs: number;
+  fallback: boolean;
+};
+
 const intentInstructions = `Determine the intent of the following user message for a Telegram bot named @CybraFeriBot.
 The bot is a futuristic smart assistant.
 Respond with ONLY ONE word: 'technical' if it's about math, code, or admin tasks; otherwise 'casual'.`;
@@ -63,6 +71,19 @@ Kalau pengguna meminta dibuatkan sesuatu, jangan hanya memberi komentar umum; be
 Kalau informasi kurang, buat asumsi yang wajar dan sebutkan asumsi itu singkat di awal.
 PENTING: Gunakan format HTML sederhana bila perlu (misalnya <b>...</b>), tetapi hindari tag yang rumit.
 Jangan mengarang fakta spesifik yang tidak diketahui.`;
+
+const documentDraftInstructions = `Anda adalah @CybraFeriBot, asisten yang menyiapkan isi dokumen untuk diekspor menjadi PDF atau DOCX.
+Buat isi dokumen dalam bahasa Indonesia yang rapi, langsung siap diekspor.
+Gunakan format plain text terstruktur dengan aturan berikut:
+- Baris judul utama diawali "# "
+- Subjudul diawali "## "
+- Poin bullet diawali "- "
+- Paragraf biasa tanpa markup lain
+- Jangan gunakan markdown selain pola di atas
+- Jangan gunakan tabel
+- Jangan sertakan penjelasan pembuka seperti "berikut adalah"
+
+Fokus pada hasil dokumen final, bukan penjelasan proses.`;
 
 function formatHistory(history: ChatHistoryItem[]) {
   if (!history.length) {
@@ -176,6 +197,46 @@ export async function generateTechnicalResponse(
       latencyMs: 0,
       knowledgeMatches: knowledge.matches,
       historyCount: history.length,
+      fallback: true,
+    };
+  }
+}
+
+export async function generateDocumentDraft(
+  request: string,
+  history: ChatHistoryItem[] = [],
+  preferences: UserPreferences = {},
+  adminConfig?: Pick<AdminConfig, 'personaOverride'>
+): Promise<DocumentDraftResult> {
+  try {
+    const result = await generateText(
+      chatModel,
+      documentDraftInstructions,
+      `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}` +
+      `${formatPreferenceInstruction(preferences)}` +
+      `${formatHistory(history)}` +
+      `Buat isi dokumen final berdasarkan permintaan berikut:\n${request}`
+    );
+
+    const firstTitleLine = result.text
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('# '));
+
+    return {
+      text: result.text,
+      title: firstTitleLine?.slice(2).trim() || 'Dokumen CybraFeriBot',
+      model: chatModel,
+      latencyMs: result.latencyMs,
+      fallback: false,
+    };
+  } catch (error: any) {
+    await logEvent('ai.generation_error', { model: chatModel, feature: 'document_draft', error: error?.message || String(error) }, 'error');
+    return {
+      text: '# Dokumen CybraFeriBot\n\nMaaf, saya belum berhasil menyusun isi dokumen saat ini.',
+      title: 'Dokumen CybraFeriBot',
+      model: chatModel,
+      latencyMs: 0,
       fallback: true,
     };
   }
