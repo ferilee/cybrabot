@@ -102,7 +102,7 @@ export async function getIntent(message: string): Promise<IntentResult> {
       fallback: false,
     };
   } catch (error) {
-    logEvent('ai.intent_error', { model: intentModel, error: String(error) }, 'error');
+    await logEvent('ai.intent_error', { model: intentModel, error: String(error) }, 'error');
     return {
       intent: 'casual',
       model: intentModel,
@@ -133,7 +133,7 @@ export async function generateResponse(
       fallback: false,
     };
   } catch (error: any) {
-    logEvent('ai.generation_error', { model: chatModel, error: error?.message || String(error) }, 'error');
+    await logEvent('ai.generation_error', { model: chatModel, error: error?.message || String(error) }, 'error');
     return {
       text: 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!',
       model: chatModel,
@@ -166,7 +166,7 @@ export async function generateTechnicalResponse(
       fallback: false,
     };
   } catch (error: any) {
-    logEvent('ai.generation_error', { model: chatModel, error: error?.message || String(error) }, 'error');
+    await logEvent('ai.generation_error', { model: chatModel, error: error?.message || String(error) }, 'error');
     return {
       text: 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!',
       model: chatModel,

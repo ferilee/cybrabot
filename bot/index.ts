@@ -94,7 +94,7 @@ bot.on('message:text', async (ctx) => {
     const text = ctx.message.text;
     const userId = ctx.from.id;
 
-    logEvent('message.received', {
+    await logEvent('message.received', {
       userId,
       chatId: ctx.chat.id,
       messageLength: text.length,
@@ -105,7 +105,7 @@ bot.on('message:text', async (ctx) => {
     
     // 2. AI Intent Routing
     const intentResult = await getIntent(text);
-    logEvent('message.intent_classified', {
+    await logEvent('message.intent_classified', {
       userId,
       intent: intentResult.intent,
       model: intentResult.model,
@@ -130,7 +130,7 @@ bot.on('message:text', async (ctx) => {
     if (preferenceUpdate) {
       const savedPreferences = await saveUserPreferences(userId, preferenceUpdate);
       const confirmation = formatPreferenceConfirmation(savedPreferences);
-      logEvent('message.preference_updated', {
+      await logEvent('message.preference_updated', {
         userId,
         preferences: savedPreferences,
       });
@@ -150,7 +150,7 @@ bot.on('message:text', async (ctx) => {
     const toolResult = runLocalTool(text);
 
     if (toolResult.handled && toolResult.response) {
-      logEvent('message.tool_used', {
+      await logEvent('message.tool_used', {
         userId,
         toolName: toolResult.toolName,
         metadata: toolResult.metadata || {},
@@ -164,7 +164,7 @@ bot.on('message:text', async (ctx) => {
         intent: toolResult.toolName || intentResult.intent,
       });
 
-      logEvent('message.completed', {
+      await logEvent('message.completed', {
         userId,
         route: 'tool',
         durationMs: Date.now() - startedAt,
@@ -175,7 +175,7 @@ bot.on('message:text', async (ctx) => {
 
     if (intentResult.intent === 'technical') {
       const response = await generateTechnicalResponse(text, history, preferences);
-      logEvent('message.ai_used', {
+      await logEvent('message.ai_used', {
         userId,
         route: 'technical',
         model: response.model,
@@ -193,7 +193,7 @@ bot.on('message:text', async (ctx) => {
         intent: 'technical',
       });
 
-      logEvent('message.completed', {
+      await logEvent('message.completed', {
         userId,
         route: 'technical_ai',
         durationMs: Date.now() - startedAt,
@@ -223,7 +223,7 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! ðŸš
           intent: 'casual',
         });
 
-        logEvent('message.completed', {
+        await logEvent('message.completed', {
           userId,
           route: 'local_about',
           durationMs: Date.now() - startedAt,
@@ -233,7 +233,7 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! ðŸš
 
       // 5. Casual Chat with LLM
       const response = await generateResponse(text, history, preferences);
-      logEvent('message.ai_used', {
+      await logEvent('message.ai_used', {
         userId,
         route: 'casual',
         model: response.model,
@@ -252,14 +252,14 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! ðŸš
         intent: 'casual',
       });
 
-      logEvent('message.completed', {
+      await logEvent('message.completed', {
         userId,
         route: 'casual_ai',
         durationMs: Date.now() - startedAt,
       });
     }
   } catch (error) {
-    logEvent('message.failed', {
+    await logEvent('message.failed', {
       error: String(error),
       durationMs: Date.now() - startedAt,
     }, 'error');

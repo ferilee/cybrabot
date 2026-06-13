@@ -30,8 +30,18 @@ sqlite.exec(`
     value TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS telemetry_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    event TEXT NOT NULL,
+    level TEXT NOT NULL,
+    payload TEXT,
+    created_at INTEGER DEFAULT (unixepoch())
+  );
+
   CREATE INDEX IF NOT EXISTS messages_user_id_idx ON messages(user_id);
   CREATE INDEX IF NOT EXISTS messages_timestamp_idx ON messages(timestamp);
+  CREATE INDEX IF NOT EXISTS telemetry_event_name_idx ON telemetry_events(event);
+  CREATE INDEX IF NOT EXISTS telemetry_created_at_idx ON telemetry_events(created_at);
 `);
 
 sqlite.close();

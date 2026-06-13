@@ -34,3 +34,10 @@ export const settings = sqliteTable('settings', {
   value: text('value'),
 });
 
+export const telemetryEvents = sqliteTable('telemetry_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event: text('event').notNull(),
+  level: text('level').notNull(),
+  payload: text('payload'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
+});

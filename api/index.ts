@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { logger } from 'hono/logger';
 import { handleUpdate } from '../bot';
 import { db } from '../db';
-import { users, messages } from '../db/schema';
+import { users, messages, telemetryEvents } from '../db/schema';
 import { count, desc } from 'drizzle-orm';
 
 const app = new Hono();
@@ -20,8 +20,66 @@ app.get('/', async (c) => {
       user: true
     }
   });
+  const recentTelemetry = await db.query.telemetryEvents.findMany({
+    limit: 200,
+    orderBy: [desc(telemetryEvents.createdAt), desc(telemetryEvents.id)],
+  });
   const totalUsers = userCount[0]?.value ?? 0;
   const totalMessages = msgCount[0]?.value ?? 0;
+  const botMessages = recentMessages.filter((message) => message.role === 'bot');
+  const parsedTelemetry = recentTelemetry.map((item) => {
+    let payload: Record<string, unknown> = {};
+
+    try {
+      payload = item.payload ? JSON.parse(item.payload) : {};
+    } catch {
+      payload = {};
+    }
+
+    return { item, payload };
+  });
+  const intentCounts = parsedTelemetry
+    .filter(({ item }) => item.event === 'message.intent_classified')
+    .reduce<Record<string, number>>((acc, entry) => {
+      const payload = entry.payload as { intent?: string };
+      const intent = payload.intent || 'unknown';
+      acc[intent] = (acc[intent] || 0) + 1;
+      return acc;
+    }, {});
+  const toolCounts = parsedTelemetry
+    .filter(({ item }) => item.event === 'message.tool_used')
+    .reduce<Record<string, number>>((acc, entry) => {
+      const payload = entry.payload as { toolName?: string };
+      const toolName = payload.toolName || 'unknown';
+      acc[toolName] = (acc[toolName] || 0) + 1;
+      return acc;
+    }, {});
+  const aiEvents = parsedTelemetry
+    .map((entry) => ({ item: entry.item, payload: entry.payload as { latencyMs?: number; knowledgeMatches?: string[]; fallback?: boolean } }))
+    .filter(({ item }) => item.event === 'message.ai_used');
+  const averageAiLatency = aiEvents.length
+    ? Math.round(aiEvents.reduce((sum, entry) => sum + (entry.payload.latencyMs || 0), 0) / aiEvents.length)
+    : 0;
+  const fallbackCount = aiEvents.filter((entry) => entry.payload.fallback).length;
+  const knowledgeCounts = aiEvents.reduce<Record<string, number>>((acc, entry) => {
+    for (const knowledgeId of entry.payload.knowledgeMatches || []) {
+      acc[knowledgeId] = (acc[knowledgeId] || 0) + 1;
+    }
+    return acc;
+  }, {});
+  const formatSummaryList = (items: Record<string, number>, emptyLabel: string) => {
+    const entries = Object.entries(items)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    if (!entries.length) {
+      return `<div style="opacity: 0.6;">${emptyLabel}</div>`;
+    }
+
+    return entries
+      .map(([label, value]) => `<div class="summary-row"><span>${label}</span><strong>${value}</strong></div>`)
+      .join('');
+  };
   const recentMessageItems = recentMessages.map((message) => {
     const role = message.role ?? 'unknown';
     const content = message.content ?? '';
@@ -119,6 +177,21 @@ app.get('/', async (c) => {
                 width: 90%;
                 max-width: 1000px;
             }
+            .summary-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 1.5rem;
+                width: 90%;
+                max-width: 1000px;
+                margin-bottom: 3rem;
+            }
+            .summary-row {
+                display: flex;
+                justify-content: space-between;
+                padding: 0.45rem 0;
+                border-bottom: 1px solid rgba(255,255,255,0.06);
+                font-size: 0.95rem;
+            }
             .log-item {
                 display: flex;
                 justify-content: space-between;
@@ -159,6 +232,27 @@ app.get('/', async (c) => {
             <div class="glass stat-card">
                 <span class="stat-value">Active</span>
                 <span class="stat-label">System Status</span>
+            </div>
+        </div>
+
+        <div class="summary-grid">
+            <div class="glass">
+                <h3 style="margin-top: 0;">Intent Breakdown</h3>
+                ${formatSummaryList(intentCounts, 'Belum ada data intent')}
+            </div>
+            <div class="glass">
+                <h3 style="margin-top: 0;">Tool Usage</h3>
+                ${formatSummaryList(toolCounts, 'Belum ada tool dipakai')}
+            </div>
+            <div class="glass">
+                <h3 style="margin-top: 0;">Knowledge Hits</h3>
+                ${formatSummaryList(knowledgeCounts, 'Belum ada knowledge hit')}
+            </div>
+            <div class="glass">
+                <h3 style="margin-top: 0;">AI Performance</h3>
+                <div class="summary-row"><span>Avg latency</span><strong>${averageAiLatency} ms</strong></div>
+                <div class="summary-row"><span>Fallback count</span><strong>${fallbackCount}</strong></div>
+                <div class="summary-row"><span>Bot replies shown</span><strong>${botMessages.length}</strong></div>
             </div>
         </div>
 
