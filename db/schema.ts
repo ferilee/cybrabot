@@ -47,6 +47,7 @@ export const documentSessions = sqliteTable('document_sessions', {
   title: text('title'),
   mimeType: text('mime_type').notNull(),
   sourceKind: text('source_kind').notNull().default('gemini'),
+  localFilePath: text('local_file_path'),
   telegramFileId: text('telegram_file_id'),
   telegramFilePath: text('telegram_file_path'),
   geminiFileName: text('gemini_file_name'),

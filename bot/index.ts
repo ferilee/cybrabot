@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { Bot, webhookCallback } from 'grammy';
-import { mkdirSync, rmSync } from 'fs';
+import { Bot, InputFile, webhookCallback } from 'grammy';
+import { mkdirSync } from 'fs';
 import { join } from 'path';
 import { db } from '../db';
 import { users, messages } from '../db/schema';
@@ -347,6 +347,14 @@ async function downloadTelegramFile(fileId: string, fileName: string, mimeType: 
   };
 }
 
+function buildTelegramFileUrl(filePath?: string | null) {
+  if (!filePath) {
+    return '';
+  }
+
+  return `https://api.telegram.org/file/bot${token}/${filePath}`;
+}
+
 async function answerActiveDocumentQuestion(ctx: any, question: string, startedAt = Date.now()) {
   const userId = ctx.from.id;
   const session = await getActiveDocumentSession(userId);
@@ -391,6 +399,80 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
   return true;
 }
 
+function shouldTreatAsDocumentSendRequest(text: string) {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('kirim file') ||
+    lower.includes('kirim dokumen') ||
+    lower.includes('kirim ulang') ||
+    lower.includes('bagikan file') ||
+    lower.includes('bagikan dokumen') ||
+    lower.includes('kirimkan file') ||
+    lower.includes('kirimkan dokumen') ||
+    lower.includes('send file') ||
+    lower.includes('send document') ||
+    lower.includes('file aslinya') ||
+    lower.includes('dokumen aslinya') ||
+    lower.includes('berkas aslinya')
+  );
+}
+
+async function sendActiveDocumentFile(ctx: any, startedAt = Date.now()) {
+  const userId = ctx.from.id;
+  const session = await getActiveDocumentSession(userId);
+
+  if (!session) {
+    await replySafely(ctx, 'Belum ada dokumen aktif untuk dikirim. Kirim file dulu, lalu minta saya kirim ulang.');
+    return true;
+  }
+
+  const fileSource = session.localFilePath
+    ? new InputFile(session.localFilePath, session.title || undefined)
+    : session.telegramFilePath
+      ? new InputFile(buildTelegramFileUrl(session.telegramFilePath), session.title || undefined)
+      : null;
+
+  if (!fileSource) {
+    await replySafely(ctx, 'Saya belum menemukan file asli yang bisa dikirim ulang.');
+    return true;
+  }
+
+  const caption =
+    `<b>${session.title}</b>\n` +
+    `<i>Berikut file yang sedang aktif.</i>`;
+
+  try {
+    if (session.mimeType.startsWith('image/')) {
+      await ctx.replyWithPhoto(fileSource, {
+        caption,
+        parse_mode: 'HTML',
+      });
+    } else {
+      await ctx.replyWithDocument(fileSource, {
+        caption,
+        parse_mode: 'HTML',
+      });
+    }
+
+    await logEvent('message.completed', {
+      userId,
+      route: 'document_send',
+      durationMs: Date.now() - startedAt,
+    });
+    return true;
+  } catch (error) {
+    await logEvent('message.failed', {
+      userId,
+      chatId: ctx?.chat?.id,
+      feature: 'document_send',
+      error: String(error),
+      durationMs: Date.now() - startedAt,
+    }, 'error');
+    await replySafely(ctx, 'Maaf, saya belum berhasil mengirim file aslinya. Coba lagi sebentar.');
+    return true;
+  }
+}
+
 async function processIncomingDocument(ctx: any, input: {
   fileId: string;
   fileName: string;
@@ -418,17 +500,16 @@ async function processIncomingDocument(ctx: any, input: {
 
   await replySafely(ctx, `Sedang memproses <b>${input.fileName}</b>. Saya akan buat ringkasan lalu menyimpannya sebagai dokumen aktif.`);
 
-  let localPath = '';
   try {
     const downloaded = await downloadTelegramFile(input.fileId, input.fileName, input.mimeType);
-    localPath = downloaded.localPath;
 
-    const summary = await summarizeDocumentFromPath(localPath, input.mimeType, input.fileName, input.prompt);
+    const summary = await summarizeDocumentFromPath(downloaded.localPath, input.mimeType, input.fileName, input.prompt);
     await saveActiveDocumentSession({
       userId,
       title: input.fileName,
       mimeType: input.mimeType,
       sourceKind: summary.sourceKind,
+      localFilePath: downloaded.localPath,
       telegramFileId: input.fileId,
       telegramFilePath: downloaded.telegramFilePath,
       geminiFileName: summary.geminiFileName,
@@ -448,7 +529,8 @@ async function processIncomingDocument(ctx: any, input: {
     const reply =
       `${summary.summary}\n\n` +
       `<b>Dokumen aktif:</b> ${input.fileName}\n` +
-      `Untuk bertanya tentang dokumen ini, kirim <b>dokumen: pertanyaan Anda</b>, <b>/dokumen pertanyaan Anda</b>, atau pakai pertanyaan natural yang jelas merujuk ke dokumen aktif.`;
+      `Untuk bertanya tentang dokumen ini, kirim <b>dokumen: pertanyaan Anda</b>, <b>/dokumen pertanyaan Anda</b>, atau pakai pertanyaan natural yang jelas merujuk ke dokumen aktif.\n` +
+      `Kalau perlu, kirim <b>/dokumen_kirim</b> untuk saya kirim ulang file aslinya.`;
 
     await replySafely(ctx, reply);
     await db.insert(messages).values({
@@ -474,9 +556,7 @@ async function processIncomingDocument(ctx: any, input: {
       'Maaf, file itu belum berhasil saya proses. Saat ini saya hanya mendukung <b>PDF</b> dan <b>gambar</b> yang ukurannya masih wajar.'
     );
   } finally {
-    if (localPath) {
-      rmSync(localPath, { force: true });
-    }
+    // local file is retained for resend support and cleaned up when the session is replaced or cleared
   }
 }
 
@@ -628,6 +708,14 @@ bot.command('dokumen_reset', async (ctx) => {
 
   await clearActiveDocumentSession(ctx.from!.id);
   await replySafely(ctx, 'Dokumen aktif sudah saya hapus. Kirim PDF atau gambar baru kalau ingin mulai sesi dokumen lagi.');
+});
+
+bot.command('dokumen_kirim', async (ctx) => {
+  if (!shouldHandleGroupCommand(ctx)) {
+    return;
+  }
+
+  await sendActiveDocumentFile(ctx);
 });
 
 bot.command('admin_status', async (ctx) => {
@@ -885,6 +973,11 @@ bot.on('message:text', async (ctx) => {
 
     if (activeDocument && shouldTreatAsDocumentQuestion(text, true)) {
       await answerActiveDocumentQuestion(ctx, text, startedAt);
+      return;
+    }
+
+    if (activeDocument && shouldTreatAsDocumentSendRequest(text)) {
+      await sendActiveDocumentFile(ctx, startedAt);
       return;
     }
 

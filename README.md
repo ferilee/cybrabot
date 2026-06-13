@@ -178,6 +178,7 @@ Alur pakainya:
    - `dokumen: apa kesimpulan utamanya?`
    - `/dokumen siapa tokoh utama di file ini?`
    - atau pertanyaan natural yang jelas merujuk ke dokumen aktif, misalnya: `tolong baca dan ringkas PDF ini`
+   - untuk meminta file aslinya kembali, gunakan `/dokumen_kirim` atau kalimat seperti `kirim file itu`
 5. Untuk menghapus dokumen aktif:
    - `/dokumen_reset`
 

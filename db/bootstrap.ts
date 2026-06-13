@@ -43,6 +43,7 @@ sqlite.exec(`
     title TEXT,
     mime_type TEXT NOT NULL,
     source_kind TEXT NOT NULL DEFAULT 'gemini',
+    local_file_path TEXT,
     telegram_file_id TEXT,
     telegram_file_path TEXT,
     gemini_file_name TEXT,
@@ -71,6 +72,7 @@ function ensureColumn(tableName: string, columnName: string, definition: string)
 }
 
 ensureColumn('document_sessions', 'source_kind', "source_kind TEXT NOT NULL DEFAULT 'gemini'");
+ensureColumn('document_sessions', 'local_file_path', 'local_file_path TEXT');
 ensureColumn('document_sessions', 'extracted_text', 'extracted_text TEXT');
 
 sqlite.close();

@@ -1,12 +1,14 @@
 import { db } from '../db';
 import { documentSessions } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { rmSync } from 'fs';
 
 export type ActiveDocumentSession = {
   userId: number;
   title: string;
   mimeType: string;
   sourceKind: 'gemini' | 'text';
+  localFilePath?: string | null;
   telegramFileId?: string | null;
   telegramFilePath?: string | null;
   geminiFileName?: string | null;
@@ -29,6 +31,7 @@ export async function getActiveDocumentSession(userId: number): Promise<ActiveDo
     title: session.title || 'Dokumen tanpa judul',
     mimeType: session.mimeType,
     sourceKind: session.sourceKind === 'text' ? 'text' : 'gemini',
+    localFilePath: session.localFilePath,
     telegramFileId: session.telegramFileId,
     telegramFilePath: session.telegramFilePath,
     geminiFileName: session.geminiFileName,
@@ -39,6 +42,11 @@ export async function getActiveDocumentSession(userId: number): Promise<ActiveDo
 }
 
 export async function saveActiveDocumentSession(input: ActiveDocumentSession) {
+  const existing = await getActiveDocumentSession(input.userId);
+  if (existing?.localFilePath && existing.localFilePath !== input.localFilePath) {
+    rmSync(existing.localFilePath, { force: true });
+  }
+
   await db
     .insert(documentSessions)
     .values({
@@ -46,6 +54,7 @@ export async function saveActiveDocumentSession(input: ActiveDocumentSession) {
       title: input.title,
       mimeType: input.mimeType,
       sourceKind: input.sourceKind,
+      localFilePath: input.localFilePath || null,
       telegramFileId: input.telegramFileId || null,
       telegramFilePath: input.telegramFilePath || null,
       geminiFileName: input.geminiFileName || null,
@@ -60,6 +69,7 @@ export async function saveActiveDocumentSession(input: ActiveDocumentSession) {
         title: input.title,
         mimeType: input.mimeType,
         sourceKind: input.sourceKind,
+        localFilePath: input.localFilePath || null,
         telegramFileId: input.telegramFileId || null,
         telegramFilePath: input.telegramFilePath || null,
         geminiFileName: input.geminiFileName || null,
@@ -72,5 +82,10 @@ export async function saveActiveDocumentSession(input: ActiveDocumentSession) {
 }
 
 export async function clearActiveDocumentSession(userId: number) {
+  const existing = await getActiveDocumentSession(userId);
+  if (existing?.localFilePath) {
+    rmSync(existing.localFilePath, { force: true });
+  }
+
   await db.delete(documentSessions).where(eq(documentSessions.userId, userId));
 }
