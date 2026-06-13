@@ -3,7 +3,7 @@ FROM oven/bun:1.3.13 AS base
 WORKDIR /app
 
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production
+RUN bun install --frozen-lockfile
 
 COPY api ./api
 COPY bot ./bot
@@ -21,4 +21,4 @@ ENV DATABASE_URL=/app/data/sqlite.db
 
 EXPOSE 4129
 
-CMD ["bun", "run", "start"]
+CMD ["sh", "-lc", "bun run db:push && bun run start"]
