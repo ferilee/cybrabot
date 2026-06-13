@@ -185,7 +185,7 @@ function tryFaqTool(text: string): ToolResult {
   };
 }
 
-function tryCapabilityTool(text: string): ToolResult {
+function tryCapabilityTool(text: string, config?: AdminConfig): ToolResult {
   const lower = text.toLowerCase();
   const asksAboutImprovement =
     (lower.includes('meningkatkan kemampuan') ||
@@ -203,28 +203,14 @@ function tryCapabilityTool(text: string): ToolResult {
   return {
     handled: true,
     toolName: 'self_describe',
-    response:
-      `<b>CybraFeriBot bisa ditingkatkan lewat jalur yang konkret, bukan sekadar "belajar sendiri".</b>\n\n` +
-      `<b>Kemampuan yang sudah ada sekarang:</b>\n` +
-      `- chat biasa dan jawaban teknis ringan\n` +
-      `- knowledge base lokal\n` +
-      `- tool lokal seperti hitung, caption, dan pengumuman\n` +
-      `- ringkas <b>PDF/gambar</b> dan tanya jawab dokumen\n` +
-      `- buat file <b>PDF</b> dan <b>DOCX</b>\n\n` +
-      `<b>Kalau mau dibuat lebih kuat, prioritas peningkatannya biasanya:</b>\n` +
-      `- tambah knowledge base yang lebih lengkap dan terkurasi\n` +
-      `- tambah tool/action baru yang benar-benar menyelesaikan tugas\n` +
-      `- perbaiki prompt dan routing intent\n` +
-      `- tambah evaluasi dari log error, latency, dan pertanyaan user\n` +
-      `- tambah template dokumen agar output PDF/DOCX lebih konsisten\n\n` +
-      `Jadi peningkatannya datang dari <b>kode, prompt, knowledge, dan tool</b>, bukan dari interaksi acak saja.`,
+    response: config?.selfDescribe.improvement,
     metadata: {
       topic: 'capability_improvement',
     },
   };
 }
 
-function trySelfDescribeTool(text: string): ToolResult {
+function trySelfDescribeTool(text: string, config?: AdminConfig): ToolResult {
   if (!isMetaBotQuestion(text)) {
     return { handled: false };
   }
@@ -240,15 +226,7 @@ function trySelfDescribeTool(text: string): ToolResult {
     return {
       handled: true,
       toolName: 'self_describe',
-      response:
-        `<b>Fitur utama CybraFeriBot saat ini:</b>\n\n` +
-        `- menjawab chat umum dan pertanyaan teknis ringan\n` +
-        `- knowledge base lokal untuk FAQ/profil/informasi tertentu\n` +
-        `- tool lokal seperti hitung, caption, dan pengumuman\n` +
-        `- ringkas <b>PDF</b> atau <b>gambar</b>\n` +
-        `- tanya jawab berdasarkan dokumen aktif\n` +
-        `- membuat file <b>PDF</b> dan <b>DOCX</b>\n` +
-        `- dashboard admin, telemetry, dan kontrol runtime`,
+      response: config?.selfDescribe.features,
       metadata: {
         topic: 'bot_features',
       },
@@ -259,13 +237,7 @@ function trySelfDescribeTool(text: string): ToolResult {
     return {
       handled: true,
       toolName: 'self_describe',
-      response:
-        `<b>Cara kerja CybraFeriBot secara ringkas:</b>\n\n` +
-        `- menerima pesan dari Telegram lewat webhook\n` +
-        `- menyimpan user dan riwayat chat ke SQLite\n` +
-        `- merutekan permintaan ke tool lokal atau Gemini\n` +
-        `- memakai knowledge base lokal bila relevan\n` +
-        `- mencatat telemetry untuk evaluasi performa bot`,
+      response: config?.selfDescribe.workflow,
       metadata: {
         topic: 'bot_workflow',
       },
@@ -275,20 +247,17 @@ function trySelfDescribeTool(text: string): ToolResult {
   return {
     handled: true,
     toolName: 'self_describe',
-    response:
-      `<b>CybraFeriBot</b> adalah bot Telegram hybrid berbasis <b>Bun</b>, <b>Hono</b>, <b>SQLite</b>, dan <b>Gemini API</b>.\n\n` +
-      `Bot ini dirancang untuk membantu chat umum, drafting ringan, ringkasan dokumen, tanya jawab berbasis file, dan pembuatan PDF/DOCX.\n\n` +
-      `Kalau Kakak mau, saya juga bisa jelaskan <b>fitur</b>, <b>cara kerja</b>, atau <b>arah peningkatan</b> bot ini secara lebih spesifik.`,
+    response: config?.selfDescribe.identity,
     metadata: {
       topic: 'bot_identity',
     },
   };
 }
 
-export function runLocalTool(text: string, config?: Pick<AdminConfig, 'enabledTools'>) {
+export function runLocalTool(text: string, config?: AdminConfig) {
   const tools = [
-    { name: 'faq', fn: tryCapabilityTool },
-    { name: 'faq', fn: trySelfDescribeTool },
+    { name: 'faq', fn: (value: string) => tryCapabilityTool(value, config) },
+    { name: 'faq', fn: (value: string) => trySelfDescribeTool(value, config) },
     { name: 'math', fn: tryMathTool },
     { name: 'caption', fn: tryCaptionTool },
     { name: 'announcement', fn: tryAnnouncementTool },

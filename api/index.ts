@@ -345,6 +345,26 @@ function renderAdminPage() {
           </div>
 
           <div class="panel">
+            <h2>Self Describe Templates</h2>
+            <label>
+              Identity
+              <textarea id="selfDescribeIdentity" placeholder="Deskripsi umum CybraFeriBot"></textarea>
+            </label>
+            <label>
+              Features
+              <textarea id="selfDescribeFeatures" placeholder="Daftar fitur utama bot"></textarea>
+            </label>
+            <label>
+              Workflow
+              <textarea id="selfDescribeWorkflow" placeholder="Penjelasan cara kerja bot"></textarea>
+            </label>
+            <label>
+              Improvement
+              <textarea id="selfDescribeImprovement" placeholder="Penjelasan arah peningkatan kemampuan bot"></textarea>
+            </label>
+          </div>
+
+          <div class="panel">
             <h2>Reset User Preferences</h2>
             <label>
               User ID Telegram
@@ -468,6 +488,10 @@ function renderAdminPage() {
           document.getElementById('toolAnnouncement').checked = Boolean(data.enabledTools?.announcement);
           document.getElementById('toolFaq').checked = Boolean(data.enabledTools?.faq);
           document.getElementById('personaOverride').value = data.personaOverride || '';
+          document.getElementById('selfDescribeIdentity').value = data.selfDescribe?.identity || '';
+          document.getElementById('selfDescribeFeatures').value = data.selfDescribe?.features || '';
+          document.getElementById('selfDescribeWorkflow').value = data.selfDescribe?.workflow || '';
+          document.getElementById('selfDescribeImprovement').value = data.selfDescribe?.improvement || '';
         }
 
         async function loadKnowledge() {
@@ -581,6 +605,12 @@ function renderAdminPage() {
                 faq: document.getElementById('toolFaq').checked,
               },
               personaOverride: document.getElementById('personaOverride').value.trim(),
+              selfDescribe: {
+                identity: document.getElementById('selfDescribeIdentity').value.trim(),
+                features: document.getElementById('selfDescribeFeatures').value.trim(),
+                workflow: document.getElementById('selfDescribeWorkflow').value.trim(),
+                improvement: document.getElementById('selfDescribeImprovement').value.trim(),
+              },
             };
             await api('/admin/config', {
               method: 'POST',
@@ -867,6 +897,7 @@ app.get('/', async (c) => {
             <div class="summary-row"><span>Announcement tool</span><strong>${adminConfig.enabledTools.announcement ? 'ON' : 'OFF'}</strong></div>
             <div class="summary-row"><span>FAQ tool</span><strong>${adminConfig.enabledTools.faq ? 'ON' : 'OFF'}</strong></div>
             <div class="summary-row"><span>Persona override</span><strong>${adminConfig.personaOverride ? 'ACTIVE' : 'EMPTY'}</strong></div>
+            <div class="summary-row"><span>Self describe templates</span><strong>${adminConfig.selfDescribe.identity && adminConfig.selfDescribe.features && adminConfig.selfDescribe.workflow && adminConfig.selfDescribe.improvement ? 'READY' : 'PARTIAL'}</strong></div>
             <p style="opacity:0.75; font-size:0.9rem; margin-top: 1rem;">
               Gunakan <a href="/admin" style="color:#a5b4fc;">panel admin</a> atau endpoint <code>/admin/config</code> dengan token admin untuk mengubah konfigurasi runtime.
             </p>
@@ -936,6 +967,22 @@ app.post('/admin/config', async (c) => {
 
   const updated = await saveAdminConfig({
     personaOverride: typeof body.personaOverride === 'string' ? body.personaOverride : undefined,
+    selfDescribe: typeof body.selfDescribe === 'object' && body.selfDescribe
+      ? {
+          identity: typeof (body.selfDescribe as Record<string, unknown>).identity === 'string'
+            ? (body.selfDescribe as Record<string, unknown>).identity as string
+            : undefined,
+          features: typeof (body.selfDescribe as Record<string, unknown>).features === 'string'
+            ? (body.selfDescribe as Record<string, unknown>).features as string
+            : undefined,
+          workflow: typeof (body.selfDescribe as Record<string, unknown>).workflow === 'string'
+            ? (body.selfDescribe as Record<string, unknown>).workflow as string
+            : undefined,
+          improvement: typeof (body.selfDescribe as Record<string, unknown>).improvement === 'string'
+            ? (body.selfDescribe as Record<string, unknown>).improvement as string
+            : undefined,
+        }
+      : undefined,
     enabledTools: typeof body.enabledTools === 'object' && body.enabledTools
       ? {
           math: Boolean((body.enabledTools as Record<string, unknown>).math),

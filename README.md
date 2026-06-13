@@ -87,6 +87,12 @@ curl -X POST "http://localhost:4129/admin/config?token=ADMIN_TOKEN_ANDA" \
 
 Panel admin web menggunakan endpoint yang sama. Buka `/admin`, isi `ADMIN_TOKEN`, lalu lakukan perubahan dari browser.
 
+Di panel admin, Anda juga bisa mengubah template jawaban meta bot seperti:
+- identitas CybraFeriBot
+- daftar fitur
+- cara kerja bot
+- arah peningkatan kemampuan bot
+
 Contoh tambah/update knowledge:
 ```bash
 curl -X POST "http://localhost:4129/admin/knowledge?token=ADMIN_TOKEN_ANDA" \
