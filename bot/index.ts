@@ -5,6 +5,7 @@ import { users, messages } from '../db/schema';
 import { desc, eq } from 'drizzle-orm';
 import { analyzeText } from '../lib/nlp';
 import { generateResponse, generateTechnicalResponse, getIntent, type ChatHistoryItem } from '../lib/ai';
+import { runLocalTool } from '../lib/tools';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -108,6 +109,20 @@ bot.on('message:text', async (ctx) => {
 
     const history = await getConversationHistory(userId);
     const lowerText = text.toLowerCase();
+    const toolResult = runLocalTool(text);
+
+    if (toolResult.handled && toolResult.response) {
+      await replySafely(ctx, toolResult.response);
+
+      await db.insert(messages).values({
+        userId,
+        content: toolResult.response,
+        role: 'bot',
+        intent: toolResult.toolName || intent,
+      });
+
+      return;
+    }
 
     if (intent === 'technical') {
       const response = await generateTechnicalResponse(text, history);
