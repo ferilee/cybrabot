@@ -49,6 +49,11 @@ export async function saveUserPreferences(userId: number, preferences: UserPrefe
   return merged;
 }
 
+export async function resetUserPreferences(userId: number) {
+  const key = settingKey(userId);
+  await db.delete(settings).where(eq(settings.key, key));
+}
+
 export function detectPreferenceUpdate(text: string): UserPreferences | null {
   const lower = text.toLowerCase();
   const update: UserPreferences = {};

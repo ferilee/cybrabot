@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { logger } from 'hono/logger';
 import { handleUpdate } from '../bot';
 import { getAdminConfig, isValidAdminToken, saveAdminConfig } from '../lib/admin-config';
+import { deleteKnowledgeDocument, listKnowledgeDocuments, saveKnowledgeDocument } from '../lib/knowledge';
+import { resetUserPreferences } from '../lib/preferences';
 import { db } from '../db';
 import { users, messages, telemetryEvents } from '../db/schema';
 import { count, desc } from 'drizzle-orm';
@@ -26,6 +28,7 @@ app.get('/', async (c) => {
     orderBy: [desc(telemetryEvents.createdAt), desc(telemetryEvents.id)],
   });
   const adminConfig = await getAdminConfig();
+  const knowledgeDocs = listKnowledgeDocuments();
   const totalUsers = userCount[0]?.value ?? 0;
   const totalMessages = msgCount[0]?.value ?? 0;
   const botMessages = recentMessages.filter((message) => message.role === 'bot');
@@ -270,6 +273,13 @@ app.get('/', async (c) => {
             </p>
         </div>
 
+        <div class="glass log-section" style="margin-bottom: 3rem;">
+            <h3 style="margin-top: 0;">Knowledge Base</h3>
+            ${knowledgeDocs.length
+              ? knowledgeDocs.map((doc) => `<div class="summary-row"><span>${doc.id}</span><strong>${doc.title}</strong></div>`).join('')
+              : '<div style="opacity: 0.6;">Belum ada dokumen knowledge</div>'}
+        </div>
+
         <div class="glass log-section">
             <h3 style="margin-top: 0;">Recent Activity</h3>
             ${recentMessageItems}
@@ -315,6 +325,60 @@ app.post('/admin/config', async (c) => {
   });
 
   return c.json({ ok: true, config: updated });
+});
+
+app.get('/admin/knowledge', async (c) => {
+  const token = c.req.query('token') || c.req.header('x-admin-token');
+  if (!isValidAdminToken(token)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  return c.json({ items: listKnowledgeDocuments() });
+});
+
+app.post('/admin/knowledge', async (c) => {
+  const token = c.req.query('token') || c.req.header('x-admin-token');
+  if (!isValidAdminToken(token)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const body = await c.req.json<{ id?: string; title?: string; content?: string }>().catch(() => null);
+  if (!body?.title || !body?.content) {
+    return c.json({ error: 'title and content are required' }, 400);
+  }
+
+  const item = saveKnowledgeDocument({
+    id: body.id,
+    title: body.title,
+    content: body.content,
+  });
+
+  return c.json({ ok: true, item });
+});
+
+app.delete('/admin/knowledge/:id', async (c) => {
+  const token = c.req.query('token') || c.req.header('x-admin-token');
+  if (!isValidAdminToken(token)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  deleteKnowledgeDocument(c.req.param('id'));
+  return c.json({ ok: true });
+});
+
+app.post('/admin/preferences/reset', async (c) => {
+  const token = c.req.query('token') || c.req.header('x-admin-token');
+  if (!isValidAdminToken(token)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const body = await c.req.json<{ userId?: number }>().catch(() => null);
+  if (!body?.userId) {
+    return c.json({ error: 'userId is required' }, 400);
+  }
+
+  await resetUserPreferences(body.userId);
+  return c.json({ ok: true, userId: body.userId });
 });
 
 // Health check

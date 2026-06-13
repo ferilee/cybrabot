@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 type KnowledgeDocument = {
@@ -9,6 +9,7 @@ type KnowledgeDocument = {
 };
 
 const knowledgeDir = join(import.meta.dir, '..', 'knowledge');
+mkdirSync(knowledgeDir, { recursive: true });
 
 function normalize(text: string) {
   return text
@@ -42,7 +43,23 @@ function loadKnowledgeDocuments(): KnowledgeDocument[] {
   });
 }
 
-const knowledgeDocuments = loadKnowledgeDocuments();
+let knowledgeDocuments = loadKnowledgeDocuments();
+
+function toMarkdown(title: string, content: string) {
+  return `# ${title}\n\n${content.trim()}\n`;
+}
+
+function slugify(input: string) {
+  return normalize(input)
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || `doc-${Date.now()}`;
+}
+
+export function reloadKnowledgeDocuments() {
+  knowledgeDocuments = loadKnowledgeDocuments();
+  return knowledgeDocuments;
+}
 
 export function retrieveKnowledge(query: string, limit = 2) {
   const queryTokens = new Set(tokenize(query));
@@ -64,6 +81,32 @@ export function retrieveKnowledge(query: string, limit = 2) {
       title: doc.title,
       content: doc.content,
     }));
+}
+
+export function listKnowledgeDocuments() {
+  return knowledgeDocuments.map((doc) => ({
+    id: doc.id,
+    title: doc.title,
+    content: doc.content,
+  }));
+}
+
+export function saveKnowledgeDocument(input: { id?: string; title: string; content: string }) {
+  const id = input.id || slugify(input.title);
+  const filePath = join(knowledgeDir, `${id}.md`);
+  writeFileSync(filePath, toMarkdown(input.title, input.content), 'utf8');
+  reloadKnowledgeDocuments();
+  return {
+    id,
+    title: input.title,
+    content: input.content.trim(),
+  };
+}
+
+export function deleteKnowledgeDocument(id: string) {
+  const filePath = join(knowledgeDir, `${id}.md`);
+  rmSync(filePath, { force: true });
+  reloadKnowledgeDocuments();
 }
 
 export function formatKnowledgeContext(query: string) {

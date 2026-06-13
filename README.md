@@ -61,6 +61,10 @@ Setelah dijalankan, Anda dapat mengakses:
 - **Webhook Endpoint:** `http://localhost:4129/api/webhook`
 - **Admin Config GET:** `GET /admin/config?token=...`
 - **Admin Config POST:** `POST /admin/config?token=...`
+- **Knowledge List:** `GET /admin/knowledge?token=...`
+- **Knowledge Upsert:** `POST /admin/knowledge?token=...`
+- **Knowledge Delete:** `DELETE /admin/knowledge/:id?token=...`
+- **Reset User Preferences:** `POST /admin/preferences/reset?token=...`
 
 Contoh update konfigurasi admin:
 ```bash
@@ -75,6 +79,29 @@ curl -X POST "http://localhost:4129/admin/config?token=ADMIN_TOKEN_ANDA" \
     },
     "personaOverride": "Jawablah dengan nada lebih profesional untuk konteks sekolah."
   }'
+```
+
+Contoh tambah/update knowledge:
+```bash
+curl -X POST "http://localhost:4129/admin/knowledge?token=ADMIN_TOKEN_ANDA" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "faq-biaya-sekolah",
+    "title": "FAQ Biaya Sekolah",
+    "content": "Informasi biaya sekolah dapat dijelaskan per komponen: SPP, kegiatan, dan seragam."
+  }'
+```
+
+Contoh hapus knowledge:
+```bash
+curl -X DELETE "http://localhost:4129/admin/knowledge/faq-biaya-sekolah?token=ADMIN_TOKEN_ANDA"
+```
+
+Contoh reset preferensi user:
+```bash
+curl -X POST "http://localhost:4129/admin/preferences/reset?token=ADMIN_TOKEN_ANDA" \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 123456789}'
 ```
 
 ## 🐳 Docker
