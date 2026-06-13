@@ -1,0 +1,24 @@
+services:
+  app:
+    image: ghcr.io/ferilee/cybrabot:latest
+    container_name: cybrabot
+    ports:
+      - "4129:4129"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 4129
+      DATABASE_URL: /app/data/sqlite.db
+    volumes:
+      - sqlite_data:/app/data
+    networks:
+      - ferileenet
+    restart: always
+
+volumes:
+  sqlite_data:
+
+networks:
+  ferileenet:
+    external: true

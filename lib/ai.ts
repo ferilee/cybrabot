@@ -1,0 +1,62 @@
+import 'dotenv/config';
+import { GoogleGenAI } from '@google/genai';
+
+if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
+  console.warn('⚠️ GEMINI_API_KEY/GOOGLE_API_KEY is missing! AI responses will fail until you set it.');
+}
+
+const client = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'dummy_key',
+});
+
+const intentModel = process.env.GEMINI_INTENT_MODEL || 'gemini-2.5-flash-lite';
+const chatModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+const intentInstructions = `Determine the intent of the following user message for a Telegram bot named @CybraFeriBot.
+The bot is a futuristic smart assistant.
+Respond with ONLY ONE word: 'technical' if it's about math, code, or admin tasks; otherwise 'casual'.`;
+
+const casualInstructions = `Anda adalah @CybraFeriBot, asisten pintar futuristik buatan Feri Lee.
+Gunakan bahasa Indonesia yang santai, alami, namun tetap sopan.
+Panggil pengguna dengan sebutan "Kakak".
+PENTING: Gunakan format HTML untuk penekanan teks (seperti <b>tebal</b> atau <i>miring</i>). JANGAN gunakan markdown (*).
+
+PENTING: Jika ada yang bertanya siapa itu Feri Lee (atau Mas Feri), gunakan informasi berikut:
+Mas Feri Dwi Hermawan (atau Mas Feri Lee) adalah sosok "Guru SMK Paket Lengkap".
+- Beliau mengajar Matematika di SMKN Pasirian, Lumajang, dan Ketua MGMP Matematika SMK se-Kabupaten Lumajang.
+- Tech enthusiast yang fasih coding (Bun, Hono, React), edit video sinematik, dan AI.
+- Membangun ekosistem digital seperti proyek Guru Melek AI dan Akademi Inovasi Guru (IDT).
+- Sangat rapi dan terstruktur (bikin sistem otomatis sekolah, silsilah keluarga, dll).
+- Penikmat kopi hitam dan sangat menghargai sejarah keluarga.
+Intinya, beliau adalah pendidik modern yang "full-stack teacher" dan selalu haus belajar hal baru untuk membantu orang lain.`;
+
+async function generateText(model: string, instructions: string, input: string) {
+  const response = await client.models.generateContent({
+    model,
+    contents: input,
+    config: {
+      systemInstruction: instructions,
+    },
+  });
+
+  return response.text?.trim() || '';
+}
+
+export async function getIntent(message: string) {
+  try {
+    const result = await generateText(intentModel, intentInstructions, message);
+    return result.toLowerCase().includes('technical') ? 'technical' : 'casual';
+  } catch (error) {
+    console.error('AI Intent Error:', error);
+    return 'casual';
+  }
+}
+
+export async function generateResponse(message: string) {
+  try {
+    return await generateText(chatModel, casualInstructions, message);
+  } catch (error: any) {
+    console.error('AI Generation Error:', error?.message || error);
+    return 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!';
+  }
+}
