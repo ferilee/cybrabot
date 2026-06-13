@@ -41,3 +41,16 @@ export const telemetryEvents = sqliteTable('telemetry_events', {
   payload: text('payload'),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
 });
+
+export const documentSessions = sqliteTable('document_sessions', {
+  userId: integer('user_id').primaryKey().references(() => users.id),
+  title: text('title'),
+  mimeType: text('mime_type').notNull(),
+  telegramFileId: text('telegram_file_id'),
+  telegramFilePath: text('telegram_file_path'),
+  geminiFileName: text('gemini_file_name'),
+  geminiFileUri: text('gemini_file_uri'),
+  summary: text('summary'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(new Date()),
+});

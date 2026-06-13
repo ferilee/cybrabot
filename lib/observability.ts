@@ -12,6 +12,9 @@ const persistedEvents = new Set([
   'message.ai_used',
   'message.completed',
   'message.failed',
+  'document.received',
+  'document.summarized',
+  'document.question_answered',
 ]);
 
 export async function logEvent(event: string, payload: LogPayload = {}, level: LogLevel = 'info') {

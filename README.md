@@ -30,6 +30,8 @@ Isi variabel berikut:
 - `GEMINI_API_KEY`: API key untuk Gemini API.
 - `GEMINI_MODEL` *(opsional)*: default `gemini-2.5-flash`.
 - `GEMINI_INTENT_MODEL` *(opsional)*: default `gemini-2.5-flash-lite`.
+- `GEMINI_DOCUMENT_MODEL` *(opsional)*: model untuk ringkasan PDF/gambar dan tanya jawab dokumen.
+- `DOCUMENT_MAX_BYTES` *(opsional)*: batas ukuran file yang diproses bot, default `20971520` (20MB).
 - `ADMIN_TOKEN` *(opsional)*: token untuk mengubah konfigurasi admin runtime via API.
 
 ### 2. Instalasi Dependensi
@@ -118,6 +120,22 @@ curl -X POST "http://localhost:4129/admin/preferences/reset?token=ADMIN_TOKEN_AN
 2. **Fast NLP:** Menggunakan Compromise.js untuk ekstraksi entitas tanpa beban berat.
 3. **Persisten Data:** Semua interaksi disimpan ke SQLite menggunakan Drizzle ORM.
 4. **Premium Dashboard:** Antarmuka web yang modern untuk memantau aktivitas bot secara real-time.
+5. **Document AI:** Bot bisa menerima <b>PDF</b> atau <b>gambar</b>, membuat ringkasan, lalu menjawab pertanyaan tentang dokumen aktif.
+
+## 📄 Fitur Dokumen
+Alur pakainya:
+1. Kirim file <b>PDF</b> atau <b>gambar</b> ke bot.
+2. Bot akan membuat ringkasan dan menyimpannya sebagai <b>dokumen aktif</b>.
+3. Tanya isi dokumen dengan salah satu format:
+   - `dokumen: apa kesimpulan utamanya?`
+   - `/dokumen siapa tokoh utama di file ini?`
+4. Untuk menghapus dokumen aktif:
+   - `/dokumen_reset`
+
+Catatan:
+- Saat ini bot hanya memproses PDF dan gambar.
+- Jawaban dokumen diambil dari file yang diunggah ke Gemini Files API.
+- Referensi file di Gemini bersifat sementara, jadi bila sudah lama, unggah ulang dokumennya.
 
 ---
 Dikembangkan oleh **Feri Lee** dengan ❤️ dan ⚡ Bun.
