@@ -61,6 +61,80 @@ function sanitizeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]+/g, '-');
 }
 
+function isGroupChat(ctx: any) {
+  return ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+}
+
+function getBotUsername(ctx: any) {
+  const username = ctx.me?.username || ctx.botInfo?.username || '';
+  return String(username).toLowerCase();
+}
+
+function isReplyToThisBot(ctx: any) {
+  const replyFrom = ctx.message?.reply_to_message?.from;
+  const botUsername = getBotUsername(ctx);
+  if (!replyFrom?.is_bot) {
+    return false;
+  }
+  if (!botUsername) {
+    return true;
+  }
+  return String(replyFrom.username || '').toLowerCase() === botUsername;
+}
+
+function hasBotMention(text: string, ctx: any) {
+  const lower = text.toLowerCase();
+  const botUsername = getBotUsername(ctx);
+
+  if (botUsername && lower.includes(`@${botUsername}`)) {
+    return true;
+  }
+
+  return lower.includes('@cybraferibot') || lower.includes('cybraferibot');
+}
+
+function shouldHandleGroupText(ctx: any, text: string) {
+  if (!isGroupChat(ctx)) {
+    return true;
+  }
+
+  if (text.trim().startsWith('/')) {
+    return true;
+  }
+
+  return isReplyToThisBot(ctx) || hasBotMention(text, ctx);
+}
+
+function shouldHandleGroupMedia(ctx: any, caption = '') {
+  if (!isGroupChat(ctx)) {
+    return true;
+  }
+
+  if (caption.trim().startsWith('/')) {
+    return true;
+  }
+
+  return isReplyToThisBot(ctx) || hasBotMention(caption, ctx);
+}
+
+function normalizeIncomingText(text: string, ctx: any) {
+  const botUsername = getBotUsername(ctx);
+  let normalized = text;
+
+  if (botUsername) {
+    const mentionPattern = new RegExp(`@${botUsername}\\b`, 'ig');
+    normalized = normalized.replace(mentionPattern, ' ');
+  }
+
+  normalized = normalized
+    .replace(/@cybraferibot\b/ig, ' ')
+    .replace(/\bcybraferibot\b[:,\- ]*/ig, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return normalized || text.trim();
+}
+
 function inferMimeTypeFromName(fileName: string) {
   const lower = fileName.toLowerCase();
   if (lower.endsWith('.pdf')) return 'application/pdf';
@@ -390,6 +464,11 @@ bot.command('dokumen_reset', async (ctx) => {
 });
 
 bot.on('message:document', async (ctx) => {
+  const caption = ctx.message.caption || '';
+  if (!shouldHandleGroupMedia(ctx, caption)) {
+    return;
+  }
+
   const document = ctx.message.document;
   const mimeType =
     (!document.mime_type || document.mime_type === 'application/octet-stream')
@@ -416,6 +495,11 @@ bot.on('message:document', async (ctx) => {
 });
 
 bot.on('message:photo', async (ctx) => {
+  const caption = ctx.message.caption || '';
+  if (!shouldHandleGroupMedia(ctx, caption)) {
+    return;
+  }
+
   const photo = ctx.message.photo[ctx.message.photo.length - 1];
   if (!photo) {
     return;
@@ -432,7 +516,12 @@ bot.on('message:photo', async (ctx) => {
 bot.on('message:text', async (ctx) => {
   const startedAt = Date.now();
   try {
-    const text = ctx.message.text;
+    const rawText = ctx.message.text;
+    if (!shouldHandleGroupText(ctx, rawText)) {
+      return;
+    }
+
+    const text = normalizeIncomingText(rawText, ctx);
     const userId = ctx.from.id;
     await ensureUserRegistered(ctx.from);
 
@@ -443,7 +532,9 @@ bot.on('message:text', async (ctx) => {
     await logEvent('message.received', {
       userId,
       chatId: ctx.chat.id,
-      messageLength: text.length,
+      messageLength: rawText.length,
+      normalizedLength: text.length,
+      chatType: ctx.chat?.type,
     });
 
     // 1. NLP Analysis
@@ -465,7 +556,7 @@ bot.on('message:text', async (ctx) => {
     // 3. Save User Message
     await db.insert(messages).values({
       userId,
-      content: text,
+      content: rawText,
       role: 'user',
       intent: intentResult.intent,
     });

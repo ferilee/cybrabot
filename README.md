@@ -155,5 +155,13 @@ Cara kerja:
 2. Bot mengubah hasilnya menjadi file <b>PDF</b> atau <b>DOCX</b>.
 3. Bot mengirim file tersebut kembali ke chat Telegram.
 
+## 👥 Penggunaan di Grup Telegram
+CybraFeriBot bisa ditambahkan ke grup. Secara default, implementasi bot ini sekarang hanya akan merespons di grup jika salah satu kondisi berikut terpenuhi:
+- bot di-mention
+- pesan merupakan reply ke pesan bot
+- user memakai command
+
+Tujuannya agar bot tidak menanggapi semua percakapan grup dan tidak boros token.
+
 ---
 Dikembangkan oleh **Feri Lee** dengan ❤️ dan ⚡ Bun.
