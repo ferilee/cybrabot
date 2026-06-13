@@ -241,6 +241,8 @@ function shouldTreatAsDocumentQuestion(text: string, hasActiveSession: boolean) 
   const docHints = [
     'dokumen',
     'pdf',
+    'docx',
+    'xlsx',
     'file ini',
     'berkas ini',
     'lampiran ini',
@@ -249,11 +251,17 @@ function shouldTreatAsDocumentQuestion(text: string, hasActiveSession: boolean) 
     'isi file',
     'isi dokumen',
     'isi pdf',
+    'soal ini',
+    'soal',
     'baca',
     'ringkas',
     'rangkum',
     'meringkas',
     'jelaskan',
+    'selesaikan',
+    'hitung',
+    'kerjakan',
+    'jawab',
     'kesimpulan',
     'intisari',
     'poin penting',
@@ -290,6 +298,8 @@ async function requireOwner(ctx: any) {
 function inferMimeTypeFromName(fileName: string) {
   const lower = fileName.toLowerCase();
   if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   if (lower.endsWith('.png')) return 'image/png';
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
   if (lower.endsWith('.webp')) return 'image/webp';
@@ -298,6 +308,8 @@ function inferMimeTypeFromName(fileName: string) {
 
 function extensionFromMimeType(mimeType: string) {
   if (mimeType === 'application/pdf') return 'pdf';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'xlsx';
   if (mimeType === 'image/png') return 'png';
   if (mimeType === 'image/webp') return 'webp';
   return 'jpg';
@@ -417,6 +429,51 @@ function shouldTreatAsDocumentSendRequest(text: string) {
   );
 }
 
+function stripHtmlMarkup(text: string) {
+  return text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function shouldExportConversationContent(text: string) {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('percakapan ini') ||
+    lower.includes('percakapan tadi') ||
+    lower.includes('percakapan terakhir') ||
+    lower.includes('jawaban terakhir') ||
+    lower.includes('jawaban ini') ||
+    lower.includes('hasil percakapan') ||
+    lower.includes('hasil obrolan') ||
+    lower.includes('chat ini') ||
+    lower.includes('obrolan ini') ||
+    lower.includes('dialog ini') ||
+    lower.includes('diskusi ini')
+  );
+}
+
+function buildConversationExportContent(requestText: string, history: ChatHistoryItem[]) {
+  const recent = history.slice(-8);
+  const lastUserMessage = [...recent].reverse().find((item) => item.role === 'user')?.content?.trim() || '';
+  const lastBotMessage = [...recent].reverse().find((item) => item.role === 'bot')?.content?.trim() || '';
+  const transcript = recent
+    .map((item, index) => {
+      const label = item.role === 'user' ? 'User' : 'Bot';
+      return `${index + 1}. ${label}: ${stripHtmlMarkup(item.content.trim())}`;
+    })
+    .join('\n');
+
+  return [
+    '# Percakapan CybraFeriBot',
+    '## Permintaan ekspor',
+    stripHtmlMarkup(requestText.trim()),
+    '## Pertanyaan terakhir',
+    stripHtmlMarkup(lastUserMessage) || '(tidak ditemukan)',
+    '## Jawaban terakhir',
+    stripHtmlMarkup(lastBotMessage) || '(tidak ditemukan)',
+    '## Transkrip ringkas',
+    transcript || '(transkrip kosong)',
+  ].join('\n\n');
+}
+
 async function sendActiveDocumentFile(ctx: any, startedAt = Date.now()) {
   const userId = ctx.from.id;
   const session = await getActiveDocumentSession(userId);
@@ -477,7 +534,7 @@ async function processIncomingDocument(ctx: any, input: {
   fileId: string;
   fileName: string;
   mimeType: string;
-  userFacingType: 'pdf' | 'image';
+  userFacingType: 'pdf' | 'image' | 'document';
   prompt?: string;
 }) {
   const startedAt = Date.now();
@@ -498,7 +555,7 @@ async function processIncomingDocument(ctx: any, input: {
     intent: 'document_upload',
   });
 
-  await replySafely(ctx, `Sedang memproses <b>${input.fileName}</b>. Saya akan buat ringkasan lalu menyimpannya sebagai dokumen aktif.`);
+  await replySafely(ctx, `Sedang memproses <b>${input.fileName}</b>. Saya akan membaca isinya lalu menyimpannya sebagai dokumen aktif.`);
 
   try {
     const downloaded = await downloadTelegramFile(input.fileId, input.fileName, input.mimeType);
@@ -553,7 +610,7 @@ async function processIncomingDocument(ctx: any, input: {
     });
     await replySafely(
       ctx,
-      'Maaf, file itu belum berhasil saya proses. Saat ini saya hanya mendukung <b>PDF</b> dan <b>gambar</b> yang ukurannya masih wajar.'
+      'Maaf, file itu belum berhasil saya proses. Saat ini saya mendukung <b>PDF</b>, <b>gambar</b>, <b>DOCX</b>, dan <b>XLSX</b> yang ukurannya masih wajar.'
     );
   } finally {
     // local file is retained for resend support and cleaned up when the session is replaced or cleared
@@ -570,6 +627,7 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
   const history = await getConversationHistory(userId);
   const preferences = await getUserPreferences(userId);
   const adminConfig = await getAdminConfig();
+  const exportFromConversation = shouldExportConversationContent(requestText);
 
   await replySafely(
     ctx,
@@ -578,7 +636,16 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
 
   let outputPath = '';
   try {
-    const draft = await generateDocumentDraft(exportRequest.prompt, history, preferences, adminConfig);
+    const draft = exportFromConversation
+      ? {
+          title: 'Percakapan CybraFeriBot',
+          text: buildConversationExportContent(requestText, history),
+          model: 'local',
+          latencyMs: 0,
+          fallback: false,
+        }
+      : await generateDocumentDraft(exportRequest.prompt, history, preferences, adminConfig);
+
     const exported = await materializeExportFile(draft.title || exportRequest.title, draft.text, exportRequest.format);
     outputPath = exported.outputPath;
 
@@ -610,6 +677,7 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
       model: draft.model,
       latencyMs: draft.latencyMs,
       fallback: draft.fallback,
+      source: exportFromConversation ? 'conversation' : 'ai_draft',
     });
 
     await logEvent('message.completed', {
@@ -863,8 +931,16 @@ bot.on('message:document', async (ctx) => {
   const fileName = document.file_name || `document-${document.file_unique_id}`;
   const fileSize = document.file_size || 0;
 
-  if (!mimeType || (mimeType !== 'application/pdf' && !mimeType.startsWith('image/'))) {
-    await replySafely(ctx, 'Saat ini saya hanya mendukung file <b>PDF</b> atau <b>gambar</b>.');
+  if (
+    !mimeType ||
+    (
+      mimeType !== 'application/pdf' &&
+      !mimeType.startsWith('image/') &&
+      mimeType !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' &&
+      mimeType !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+  ) {
+    await replySafely(ctx, 'Saat ini saya hanya mendukung file <b>PDF</b>, <b>gambar</b>, <b>DOCX</b>, atau <b>XLSX</b>.');
     return;
   }
   if (fileSize > MAX_DOCUMENT_BYTES) {
@@ -876,7 +952,12 @@ bot.on('message:document', async (ctx) => {
     fileId: document.file_id,
     fileName,
     mimeType,
-    userFacingType: mimeType === 'application/pdf' ? 'pdf' : 'image',
+    userFacingType:
+      mimeType === 'application/pdf'
+        ? 'pdf'
+        : mimeType.startsWith('image/')
+          ? 'image'
+          : 'document',
     prompt: normalizeIncomingText(caption, ctx) || undefined,
   });
 });

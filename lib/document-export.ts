@@ -35,7 +35,7 @@ export function detectDocumentExportRequest(text: string): ExportRequest | null 
   const lower = text.toLowerCase();
   const wantsPdf = /\bpdf\b/.test(lower);
   const wantsDocx = /\bdocx\b|\bword\b/.test(lower);
-  const asksToCreate = /(buatkan|bikinkan|generate|buat|tolong buat|tolong bikin)/.test(lower);
+  const asksToCreate = /(buatkan|bikinkan|generate|buat|tolong buat|tolong bikin|jadikan|ubah jadi|convert|ekspor|export)/.test(lower);
 
   if (!asksToCreate || (!wantsPdf && !wantsDocx)) {
     return null;

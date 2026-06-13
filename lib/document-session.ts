@@ -7,7 +7,7 @@ export type ActiveDocumentSession = {
   userId: number;
   title: string;
   mimeType: string;
-  sourceKind: 'gemini' | 'text';
+  sourceKind: 'gemini' | 'text' | 'image';
   localFilePath?: string | null;
   telegramFileId?: string | null;
   telegramFilePath?: string | null;
@@ -30,7 +30,12 @@ export async function getActiveDocumentSession(userId: number): Promise<ActiveDo
     userId: session.userId,
     title: session.title || 'Dokumen tanpa judul',
     mimeType: session.mimeType,
-    sourceKind: session.sourceKind === 'text' ? 'text' : 'gemini',
+    sourceKind:
+      session.sourceKind === 'text'
+        ? 'text'
+        : session.sourceKind === 'image'
+          ? 'image'
+          : 'gemini',
     localFilePath: session.localFilePath,
     telegramFileId: session.telegramFileId,
     telegramFilePath: session.telegramFilePath,

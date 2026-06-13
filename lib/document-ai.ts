@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { GoogleGenAI, createPartFromUri } from '@google/genai';
+import { GoogleGenAI, createPartFromBase64, createPartFromUri } from '@google/genai';
 import { logEvent } from './observability';
 import type { ActiveDocumentSession } from './document-session';
 import { extractTextFromDocument, isTextDocumentMimeType } from './document-source';
@@ -21,7 +21,7 @@ export type DocumentSummaryResult = {
   latencyMs: number;
   geminiFileName: string;
   geminiFileUri: string;
-  sourceKind: 'gemini' | 'text';
+  sourceKind: 'gemini' | 'text' | 'image';
   extractedText?: string;
 };
 
@@ -67,6 +67,26 @@ function buildPromptForDocument(prompt?: string) {
   );
 }
 
+function buildPromptForImageDocument(prompt?: string) {
+  const trimmedPrompt = prompt?.trim();
+
+  if (trimmedPrompt) {
+    return (
+      `Jawab permintaan pengguna berdasarkan isi gambar ini.\n` +
+      `Jika gambar berisi soal matematika, baca semua ekspresi dan kerjakan langkah demi langkah.\n` +
+      `Jika gambar berisi teks, tabel, atau catatan, jelaskan isi yang terlihat dan jawab permintaan pengguna dengan tepat.\n` +
+      `Kalau ada bagian yang tidak terbaca, sebutkan bagian itu dengan jujur.\n\n` +
+      `Permintaan pengguna: ${trimmedPrompt}`
+    );
+  }
+
+  return (
+    `Baca gambar ini dan buat ringkasan dalam bahasa Indonesia.\n` +
+    `Fokus pada teks yang terlihat, data penting, dan kesimpulan yang bisa diambil.\n` +
+    `Jika gambar berisi soal, tampilkan langkah penyelesaian dan jawaban akhirnya.\n`
+  );
+}
+
 function buildPromptForTextDocument(documentText: string, prompt?: string) {
   const trimmedPrompt = prompt?.trim();
 
@@ -89,6 +109,12 @@ function buildPromptForTextDocument(documentText: string, prompt?: string) {
     `4. kesimpulan atau tindak lanjut\n\n` +
     `Isi dokumen:\n${documentText}`
   );
+}
+
+async function createImagePartFromPath(filePath: string, mimeType: string) {
+  const bytes = await Bun.file(filePath).arrayBuffer();
+  const base64 = Buffer.from(bytes).toString('base64');
+  return createPartFromBase64(base64, mimeType);
 }
 
 export async function summarizeDocumentFromPath(
@@ -123,6 +149,32 @@ export async function summarizeDocumentFromPath(
       geminiFileUri: '',
       sourceKind: 'text',
       extractedText,
+    };
+  }
+
+  if (mimeType.startsWith('image/')) {
+    const response = await client.models.generateContent({
+      model: documentModel,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            await createImagePartFromPath(filePath, mimeType),
+            {
+              text: buildPromptForImageDocument(prompt),
+            },
+          ],
+        },
+      ],
+    });
+
+    return {
+      summary: formatTelegramRichText(response.text?.trim() || 'Gambar berhasil diproses, tetapi ringkasan kosong.'),
+      model: documentModel,
+      latencyMs: Date.now() - startedAt,
+      geminiFileName: '',
+      geminiFileUri: '',
+      sourceKind: 'image',
     };
   }
 
@@ -198,6 +250,39 @@ export async function answerQuestionAboutDocument(session: ActiveDocumentSession
 
     return {
       text: formatTelegramRichText(response.text?.trim() || 'Saya belum bisa menemukan jawaban yang jelas dari dokumen itu.'),
+      model: documentModel,
+      latencyMs: Date.now() - startedAt,
+      fallback: false,
+    };
+  }
+
+  if (session.sourceKind === 'image') {
+    if (!session.localFilePath) {
+      throw new Error('Dokumen gambar aktif tidak memiliki file lokal');
+    }
+
+    const response = await client.models.generateContent({
+      model: documentModel,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            await createImagePartFromPath(session.localFilePath, session.mimeType),
+            {
+              text:
+                `Jawab pertanyaan pengguna berdasarkan gambar ini.\n` +
+                `Jika gambar berisi soal matematika, selesaikan dengan langkah yang benar dan beri jawaban final.\n` +
+                `Jika gambar berisi teks atau tabel, baca isinya dengan teliti dan jawab berdasarkan apa yang terlihat.\n` +
+                `Kalau jawaban tidak terlihat, katakan dengan jujur bahwa informasi itu tidak terbaca di gambar.\n\n` +
+                `Pertanyaan pengguna: ${question}`,
+            },
+          ],
+        },
+      ],
+    });
+
+    return {
+      text: formatTelegramRichText(response.text?.trim() || 'Saya belum bisa menemukan jawaban yang jelas dari gambar itu.'),
       model: documentModel,
       latencyMs: Date.now() - startedAt,
       fallback: false,
