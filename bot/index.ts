@@ -7,10 +7,11 @@ import { users, messages } from '../db/schema';
 import { desc, eq } from 'drizzle-orm';
 import { analyzeText } from '../lib/nlp';
 import { generateDocumentDraft, generateResponse, generateTechnicalResponse, getIntent, type ChatHistoryItem } from '../lib/ai';
-import { getAdminConfig } from '../lib/admin-config';
+import { getAdminConfig, saveAdminConfig } from '../lib/admin-config';
 import { answerQuestionAboutDocument, explainDocumentFeatureError, summarizeDocumentFromPath } from '../lib/document-ai';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
 import { cleanupExportFile, detectDocumentExportRequest, materializeExportFile } from '../lib/document-export';
+import { deleteKnowledgeDocument, saveKnowledgeDocument } from '../lib/knowledge';
 import { logEvent } from '../lib/observability';
 import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
@@ -72,6 +73,23 @@ function isAuthorizedGroupUser(ctx: any) {
     return true;
   }
 
+  const from = ctx.from;
+  if (!from) {
+    return false;
+  }
+
+  if (from.id !== GROUP_ALLOWED_USER_ID) {
+    return false;
+  }
+
+  if (!GROUP_ALLOWED_USERNAME) {
+    return true;
+  }
+
+  return String(from.username || '').toLowerCase() === GROUP_ALLOWED_USERNAME;
+}
+
+function isBotOwner(ctx: any) {
   const from = ctx.from;
   if (!from) {
     return false;
@@ -172,6 +190,15 @@ function shouldHandleGroupCommand(ctx: any) {
   }
 
   return isAuthorizedGroupUser(ctx);
+}
+
+async function requireOwner(ctx: any) {
+  if (isBotOwner(ctx)) {
+    return true;
+  }
+
+  await replySafely(ctx, 'Perintah admin ini hanya bisa dipakai oleh pemilik bot yang diizinkan.');
+  return false;
 }
 
 function inferMimeTypeFromName(fileName: string) {
@@ -512,6 +539,133 @@ bot.command('dokumen_reset', async (ctx) => {
 
   await clearActiveDocumentSession(ctx.from!.id);
   await replySafely(ctx, 'Dokumen aktif sudah saya hapus. Kirim PDF atau gambar baru kalau ingin mulai sesi dokumen lagi.');
+});
+
+bot.command('admin_status', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const config = await getAdminConfig();
+  await replySafely(
+    ctx,
+    `<b>Status Admin CybraFeriBot</b>\n\n` +
+    `<b>Tools:</b>\n` +
+    `- math: ${config.enabledTools.math ? 'on' : 'off'}\n` +
+    `- caption: ${config.enabledTools.caption ? 'on' : 'off'}\n` +
+    `- announcement: ${config.enabledTools.announcement ? 'on' : 'off'}\n` +
+    `- faq: ${config.enabledTools.faq ? 'on' : 'off'}\n\n` +
+    `<b>Persona override:</b> ${config.personaOverride ? 'active' : 'empty'}\n` +
+    `<b>Self templates:</b> ready`
+  );
+});
+
+bot.command('admin_tool', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const raw = ctx.message!.text.replace(/^\/admin_tool(@\w+)?/i, '').trim();
+  const [toolNameRaw, stateRaw] = raw.split(/\s+/);
+  const toolName = toolNameRaw?.toLowerCase();
+  const state = stateRaw?.toLowerCase();
+
+  if (!toolName || !state || !['math', 'caption', 'announcement', 'faq'].includes(toolName) || !['on', 'off'].includes(state)) {
+    await replySafely(ctx, 'Format: <b>/admin_tool [math|caption|announcement|faq] [on|off]</b>');
+    return;
+  }
+
+  const updated = await saveAdminConfig({
+    enabledTools: {
+      [toolName]: state === 'on',
+    } as any,
+  });
+
+  await replySafely(ctx, `Tool <b>${toolName}</b> sekarang <b>${updated.enabledTools[toolName as keyof typeof updated.enabledTools] ? 'on' : 'off'}</b>.`);
+});
+
+bot.command('admin_persona', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const raw = ctx.message!.text.replace(/^\/admin_persona(@\w+)?/i, '').trim();
+  await saveAdminConfig({
+    personaOverride: raw,
+  });
+
+  await replySafely(ctx, raw ? 'Persona override berhasil diperbarui.' : 'Persona override dikosongkan.');
+});
+
+bot.command('admin_self', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const raw = ctx.message!.text.replace(/^\/admin_self(@\w+)?/i, '').trim();
+  const [fieldLine, ...contentLines] = raw.split('\n');
+  const field = fieldLine?.trim().toLowerCase();
+  const content = contentLines.join('\n').trim();
+
+  if (!field || !['identity', 'features', 'workflow', 'improvement'].includes(field)) {
+    await replySafely(
+      ctx,
+      `Format:\n<b>/admin_self identity</b>\nisi baru\n\n` +
+      `Field valid: <b>identity</b>, <b>features</b>, <b>workflow</b>, <b>improvement</b>`
+    );
+    return;
+  }
+
+  if (!content) {
+    await replySafely(ctx, 'Isi template baru tidak boleh kosong.');
+    return;
+  }
+
+  await saveAdminConfig({
+    selfDescribe: {
+      [field]: content,
+    } as any,
+  });
+
+  await replySafely(ctx, `Template <b>${field}</b> berhasil diperbarui.`);
+});
+
+bot.command('admin_knowledge_add', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const raw = ctx.message!.text.replace(/^\/admin_knowledge_add(@\w+)?/i, '').trim();
+  const [idLine, titleLine, ...contentLines] = raw.split('\n');
+  const id = idLine?.trim();
+  const title = titleLine?.trim();
+  const content = contentLines.join('\n').trim();
+
+  if (!id || !title || !content) {
+    await replySafely(
+      ctx,
+      `Format:\n<b>/admin_knowledge_add id-dokumen</b>\nJudul dokumen\nIsi dokumen`
+    );
+    return;
+  }
+
+  const item = saveKnowledgeDocument({ id, title, content });
+  await replySafely(ctx, `Knowledge <b>${item.id}</b> berhasil disimpan.`);
+});
+
+bot.command('admin_knowledge_delete', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const raw = ctx.message!.text.replace(/^\/admin_knowledge_delete(@\w+)?/i, '').trim();
+  if (!raw) {
+    await replySafely(ctx, 'Format: <b>/admin_knowledge_delete id-dokumen</b>');
+    return;
+  }
+
+  deleteKnowledgeDocument(raw);
+  await replySafely(ctx, `Knowledge <b>${raw}</b> dihapus.`);
 });
 
 bot.on('message:document', async (ctx) => {

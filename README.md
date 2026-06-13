@@ -95,6 +95,43 @@ Di panel admin, Anda juga bisa mengubah template jawaban meta bot seperti:
 - cara kerja bot
 - arah peningkatan kemampuan bot
 
+## 📲 Update Bot via Telegram
+CybraFeriBot sekarang juga bisa menerima pembaruan <b>runtime</b> langsung dari Telegram, tetapi hanya dari pemilik bot yang diizinkan:
+- `user_id: 177517779`
+- `username: @ferilee`
+
+Batasannya sengaja ketat:
+- bisa mengubah <b>runtime config</b>, <b>persona</b>, <b>template jawaban meta</b>, dan <b>knowledge base</b>
+- tidak bisa menjalankan <b>arbitrary code execution</b> atau memodifikasi source code langsung dari chat
+
+Perintah yang tersedia:
+- `/admin_status`
+- `/admin_tool [math|caption|announcement|faq] [on|off]`
+- `/admin_persona isi persona baru`
+- `/admin_self [identity|features|workflow|improvement]` lalu isi baru di baris berikutnya
+- `/admin_knowledge_add` lalu isi `id`, `judul`, dan `konten` dalam format multiline
+- `/admin_knowledge_delete id-dokumen`
+
+Contoh:
+```text
+/admin_tool announcement off
+```
+
+```text
+/admin_persona Jawablah dengan nada formal, ringkas, dan cocok untuk konteks sekolah.
+```
+
+```text
+/admin_self features
+CybraFeriBot dapat membaca PDF dan gambar, meringkas dokumen, menjawab pertanyaan tentang dokumen, dan membuat file PDF atau DOCX.
+```
+
+```text
+/admin_knowledge_add faq-jam-operasional
+FAQ Jam Operasional
+Sekolah buka Senin sampai Jumat pukul 07.00-15.00.
+```
+
 Contoh tambah/update knowledge:
 ```bash
 curl -X POST "http://localhost:4129/admin/knowledge?token=ADMIN_TOKEN_ANDA" \
