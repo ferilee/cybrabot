@@ -12,6 +12,407 @@ const app = new Hono();
 
 app.use('*', logger());
 
+function renderAdminPage() {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>CybraFeriBot Admin</title>
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+      <style>
+        :root {
+          --primary: #6366f1;
+          --secondary: #a855f7;
+          --bg: #0f172a;
+          --panel: rgba(30, 41, 59, 0.78);
+          --text: #f8fafc;
+          --muted: rgba(248, 250, 252, 0.72);
+          --danger: #ef4444;
+          --ok: #22c55e;
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          font-family: 'Outfit', sans-serif;
+          background: radial-gradient(circle at top left, #1e1b4b, #0f172a);
+          color: var(--text);
+          min-height: 100vh;
+          padding: 2rem;
+        }
+        .container {
+          max-width: 1100px;
+          margin: 0 auto;
+        }
+        .panel {
+          background: var(--panel);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 20px;
+          padding: 1.5rem;
+          margin-bottom: 1.5rem;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+          gap: 1.5rem;
+        }
+        h1, h2, h3 { margin-top: 0; }
+        label {
+          display: block;
+          margin-bottom: 0.75rem;
+          color: var(--muted);
+          font-size: 0.95rem;
+        }
+        input[type="text"], input[type="password"], input[type="number"], textarea {
+          width: 100%;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 12px;
+          background: rgba(15, 23, 42, 0.8);
+          color: var(--text);
+          padding: 0.8rem 0.9rem;
+          font: inherit;
+          margin-top: 0.35rem;
+        }
+        textarea { min-height: 130px; resize: vertical; }
+        .row {
+          display: flex;
+          gap: 0.75rem;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .toolbar {
+          display: flex;
+          gap: 0.75rem;
+          flex-wrap: wrap;
+          margin-top: 1rem;
+        }
+        button {
+          border: 0;
+          border-radius: 12px;
+          padding: 0.8rem 1rem;
+          font: inherit;
+          font-weight: 600;
+          cursor: pointer;
+          color: white;
+          background: linear-gradient(to right, var(--primary), var(--secondary));
+        }
+        button.secondary {
+          background: rgba(255,255,255,0.08);
+        }
+        button.danger {
+          background: var(--danger);
+        }
+        .checkboxes label {
+          display: flex;
+          align-items: center;
+          gap: 0.6rem;
+          margin-bottom: 0.4rem;
+          color: var(--text);
+        }
+        .list {
+          display: grid;
+          gap: 0.75rem;
+          max-height: 420px;
+          overflow: auto;
+        }
+        .item {
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 14px;
+          padding: 0.9rem;
+          background: rgba(15, 23, 42, 0.5);
+        }
+        .item p {
+          margin: 0.4rem 0 0;
+          color: var(--muted);
+          white-space: pre-wrap;
+        }
+        .status {
+          margin-top: 0.75rem;
+          color: var(--muted);
+          font-size: 0.95rem;
+        }
+        .status.ok { color: var(--ok); }
+        .status.error { color: #fca5a5; }
+        .hint {
+          color: var(--muted);
+          font-size: 0.95rem;
+        }
+        a { color: #a5b4fc; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="panel">
+          <div class="row" style="justify-content: space-between;">
+            <div>
+              <div style="letter-spacing: 4px; color: #818cf8; font-size: 0.85rem; font-weight: 600;">ADMIN CONSOLE</div>
+              <h1>CybraFeriBot Runtime Control</h1>
+              <p class="hint">Panel ini memakai endpoint admin yang sudah ada. Token tidak disimpan di server; hanya dipakai di browser untuk memanggil API.</p>
+            </div>
+            <div><a href="/">Kembali ke dashboard</a></div>
+          </div>
+          <label>
+            Admin token
+            <input id="adminToken" type="password" placeholder="Masukkan ADMIN_TOKEN" />
+          </label>
+          <div class="toolbar">
+            <button id="loadAllButton" type="button">Load Current State</button>
+          </div>
+          <div id="globalStatus" class="status"></div>
+        </div>
+
+        <div class="grid">
+          <div class="panel">
+            <h2>Runtime Config</h2>
+            <div class="checkboxes">
+              <label><input id="toolMath" type="checkbox" /> Math tool</label>
+              <label><input id="toolCaption" type="checkbox" /> Caption tool</label>
+              <label><input id="toolAnnouncement" type="checkbox" /> Announcement tool</label>
+              <label><input id="toolFaq" type="checkbox" /> FAQ tool</label>
+            </div>
+            <label>
+              Persona override
+              <textarea id="personaOverride" placeholder="Mis. Jawablah lebih formal untuk konteks sekolah."></textarea>
+            </label>
+            <div class="toolbar">
+              <button id="saveConfigButton" type="button">Save Config</button>
+            </div>
+            <div id="configStatus" class="status"></div>
+          </div>
+
+          <div class="panel">
+            <h2>Reset User Preferences</h2>
+            <label>
+              User ID Telegram
+              <input id="resetUserId" type="number" placeholder="123456789" />
+            </label>
+            <div class="toolbar">
+              <button id="resetPreferencesButton" type="button" class="danger">Reset Preferences</button>
+            </div>
+            <div id="preferencesStatus" class="status"></div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="panel">
+            <h2>Knowledge Editor</h2>
+            <label>
+              Document ID
+              <input id="knowledgeId" type="text" placeholder="Kosongkan untuk auto-generate dari title" />
+            </label>
+            <label>
+              Title
+              <input id="knowledgeTitle" type="text" placeholder="Judul dokumen knowledge" />
+            </label>
+            <label>
+              Content
+              <textarea id="knowledgeContent" placeholder="Isi dokumen knowledge"></textarea>
+            </label>
+            <div class="toolbar">
+              <button id="saveKnowledgeButton" type="button">Save Knowledge</button>
+              <button id="clearKnowledgeButton" type="button" class="secondary">Clear Form</button>
+            </div>
+            <div id="knowledgeStatus" class="status"></div>
+          </div>
+
+          <div class="panel">
+            <h2>Knowledge Documents</h2>
+            <div id="knowledgeList" class="list">
+              <div class="hint">Belum dimuat.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        const params = new URLSearchParams(window.location.search);
+        const tokenInput = document.getElementById('adminToken');
+        const globalStatus = document.getElementById('globalStatus');
+        const configStatus = document.getElementById('configStatus');
+        const knowledgeStatus = document.getElementById('knowledgeStatus');
+        const preferencesStatus = document.getElementById('preferencesStatus');
+        const knowledgeList = document.getElementById('knowledgeList');
+
+        tokenInput.value = params.get('token') || '';
+
+        function setStatus(target, message, type = '') {
+          target.className = 'status' + (type ? ' ' + type : '');
+          target.textContent = message;
+        }
+
+        function requireToken() {
+          const token = tokenInput.value.trim();
+          if (!token) {
+            throw new Error('ADMIN_TOKEN wajib diisi.');
+          }
+          return token;
+        }
+
+        function adminUrl(path) {
+          const token = encodeURIComponent(requireToken());
+          return path + (path.includes('?') ? '&' : '?') + 'token=' + token;
+        }
+
+        function escapeHtml(value) {
+          return value
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+
+        async function api(path, options = {}) {
+          const response = await fetch(adminUrl(path), options);
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(data.error || 'Request failed');
+          }
+          return data;
+        }
+
+        async function loadConfig() {
+          const data = await api('/admin/config');
+          document.getElementById('toolMath').checked = Boolean(data.enabledTools?.math);
+          document.getElementById('toolCaption').checked = Boolean(data.enabledTools?.caption);
+          document.getElementById('toolAnnouncement').checked = Boolean(data.enabledTools?.announcement);
+          document.getElementById('toolFaq').checked = Boolean(data.enabledTools?.faq);
+          document.getElementById('personaOverride').value = data.personaOverride || '';
+        }
+
+        async function loadKnowledge() {
+          const data = await api('/admin/knowledge');
+          const items = Array.isArray(data.items) ? data.items : [];
+          if (!items.length) {
+            knowledgeList.innerHTML = '<div class="hint">Belum ada dokumen knowledge.</div>';
+            return;
+          }
+          knowledgeList.innerHTML = items.map((item) => {
+            const preview = (item.content || '').slice(0, 220);
+            return \`
+              <div class="item">
+                <div class="row" style="justify-content: space-between; align-items: flex-start;">
+                  <div>
+                    <strong>\${escapeHtml(item.title || item.id)}</strong>
+                    <div class="hint">\${escapeHtml(item.id || '')}</div>
+                  </div>
+                  <div class="row">
+                    <button type="button" class="secondary" onclick="editKnowledge(\${JSON.stringify(item).replace(/"/g, '&quot;')})">Edit</button>
+                    <button type="button" class="danger" onclick="deleteKnowledge('\${escapeHtml(item.id)}')">Delete</button>
+                  </div>
+                </div>
+                <p>\${escapeHtml(preview)}\${(item.content || '').length > 220 ? '...' : ''}</p>
+              </div>
+            \`;
+          }).join('');
+        }
+
+        window.editKnowledge = (item) => {
+          document.getElementById('knowledgeId').value = item.id || '';
+          document.getElementById('knowledgeTitle').value = item.title || '';
+          document.getElementById('knowledgeContent').value = item.content || '';
+          setStatus(knowledgeStatus, 'Form knowledge diisi dari dokumen terpilih.', 'ok');
+        };
+
+        window.deleteKnowledge = async (id) => {
+          if (!confirm('Hapus knowledge "' + id + '"?')) {
+            return;
+          }
+          try {
+            await api('/admin/knowledge/' + encodeURIComponent(id), { method: 'DELETE' });
+            setStatus(knowledgeStatus, 'Knowledge berhasil dihapus.', 'ok');
+            await loadKnowledge();
+          } catch (error) {
+            setStatus(knowledgeStatus, error.message, 'error');
+          }
+        };
+
+        document.getElementById('loadAllButton').addEventListener('click', async () => {
+          try {
+            setStatus(globalStatus, 'Memuat state runtime...');
+            await Promise.all([loadConfig(), loadKnowledge()]);
+            setStatus(globalStatus, 'State runtime berhasil dimuat.', 'ok');
+          } catch (error) {
+            setStatus(globalStatus, error.message, 'error');
+          }
+        });
+
+        document.getElementById('saveConfigButton').addEventListener('click', async () => {
+          try {
+            setStatus(configStatus, 'Menyimpan config...');
+            const payload = {
+              enabledTools: {
+                math: document.getElementById('toolMath').checked,
+                caption: document.getElementById('toolCaption').checked,
+                announcement: document.getElementById('toolAnnouncement').checked,
+                faq: document.getElementById('toolFaq').checked,
+              },
+              personaOverride: document.getElementById('personaOverride').value.trim(),
+            };
+            await api('/admin/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            setStatus(configStatus, 'Config runtime berhasil disimpan.', 'ok');
+          } catch (error) {
+            setStatus(configStatus, error.message, 'error');
+          }
+        });
+
+        document.getElementById('saveKnowledgeButton').addEventListener('click', async () => {
+          try {
+            setStatus(knowledgeStatus, 'Menyimpan knowledge...');
+            const payload = {
+              id: document.getElementById('knowledgeId').value.trim() || undefined,
+              title: document.getElementById('knowledgeTitle').value.trim(),
+              content: document.getElementById('knowledgeContent').value.trim(),
+            };
+            await api('/admin/knowledge', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            setStatus(knowledgeStatus, 'Knowledge berhasil disimpan.', 'ok');
+            await loadKnowledge();
+          } catch (error) {
+            setStatus(knowledgeStatus, error.message, 'error');
+          }
+        });
+
+        document.getElementById('clearKnowledgeButton').addEventListener('click', () => {
+          document.getElementById('knowledgeId').value = '';
+          document.getElementById('knowledgeTitle').value = '';
+          document.getElementById('knowledgeContent').value = '';
+          setStatus(knowledgeStatus, 'Form knowledge dibersihkan.', 'ok');
+        });
+
+        document.getElementById('resetPreferencesButton').addEventListener('click', async () => {
+          try {
+            setStatus(preferencesStatus, 'Mereset preferensi user...');
+            const userId = Number(document.getElementById('resetUserId').value);
+            if (!userId) {
+              throw new Error('User ID tidak valid.');
+            }
+            await api('/admin/preferences/reset', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId }),
+            });
+            setStatus(preferencesStatus, 'Preferensi user berhasil direset.', 'ok');
+          } catch (error) {
+            setStatus(preferencesStatus, error.message, 'error');
+          }
+        });
+      </script>
+    </body>
+    </html>
+  `;
+}
+
 // Root Dashboard (Premium Aesthetics)
 app.get('/', async (c) => {
   const userCount = await db.select({ value: count() }).from(users);
@@ -269,7 +670,7 @@ app.get('/', async (c) => {
             <div class="summary-row"><span>FAQ tool</span><strong>${adminConfig.enabledTools.faq ? 'ON' : 'OFF'}</strong></div>
             <div class="summary-row"><span>Persona override</span><strong>${adminConfig.personaOverride ? 'ACTIVE' : 'EMPTY'}</strong></div>
             <p style="opacity:0.75; font-size:0.9rem; margin-top: 1rem;">
-              Gunakan endpoint <code>/admin/config</code> dengan token admin untuk mengubah konfigurasi runtime.
+              Gunakan <a href="/admin" style="color:#a5b4fc;">panel admin</a> atau endpoint <code>/admin/config</code> dengan token admin untuk mengubah konfigurasi runtime.
             </p>
         </div>
 
@@ -288,6 +689,8 @@ app.get('/', async (c) => {
     </html>
   `);
 });
+
+app.get('/admin', (c) => c.html(renderAdminPage()));
 
 app.get('/admin/config', async (c) => {
   const token = c.req.query('token') || c.req.header('x-admin-token');

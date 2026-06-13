@@ -57,6 +57,7 @@ bun run start
 ## 🌐 Dashboard & API
 Setelah dijalankan, Anda dapat mengakses:
 - **Dashboard:** `http://localhost:4129/` (Visualisasi statistik bot)
+- **Admin Panel:** `http://localhost:4129/admin` (Kelola runtime config, knowledge, dan reset preferensi user)
 - **Health Check:** `http://localhost:4129/health`
 - **Webhook Endpoint:** `http://localhost:4129/api/webhook`
 - **Admin Config GET:** `GET /admin/config?token=...`
@@ -80,6 +81,8 @@ curl -X POST "http://localhost:4129/admin/config?token=ADMIN_TOKEN_ANDA" \
     "personaOverride": "Jawablah dengan nada lebih profesional untuk konteks sekolah."
   }'
 ```
+
+Panel admin web menggunakan endpoint yang sama. Buka `/admin`, isi `ADMIN_TOKEN`, lalu lakukan perubahan dari browser.
 
 Contoh tambah/update knowledge:
 ```bash
