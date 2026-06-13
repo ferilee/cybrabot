@@ -33,6 +33,8 @@ Isi variabel berikut:
 - `GEMINI_DOCUMENT_MODEL` *(opsional)*: model untuk ringkasan PDF/gambar dan tanya jawab dokumen.
 - `DOCUMENT_MAX_BYTES` *(opsional)*: batas ukuran file yang diproses bot, default `20971520` (20MB).
 - `ADMIN_TOKEN` *(opsional)*: token untuk mengubah konfigurasi admin runtime via API.
+- `GROUP_ALLOWED_USER_ID` *(opsional)*: hanya user ini yang boleh memanggil bot di grup, default `177517779`.
+- `GROUP_ALLOWED_USERNAME` *(opsional)*: username Telegram yang dipasangkan dengan `GROUP_ALLOWED_USER_ID`, default `ferilee`.
 
 ### 2. Instalasi Dependensi
 ```bash
@@ -156,12 +158,16 @@ Cara kerja:
 3. Bot mengirim file tersebut kembali ke chat Telegram.
 
 ## 👥 Penggunaan di Grup Telegram
-CybraFeriBot bisa ditambahkan ke grup. Secara default, implementasi bot ini sekarang hanya akan merespons di grup jika salah satu kondisi berikut terpenuhi:
+CybraFeriBot bisa ditambahkan ke grup. Secara default, implementasi bot ini sekarang hanya akan merespons di grup jika <b>pengirimnya adalah user yang diizinkan</b> dan salah satu kondisi berikut terpenuhi:
 - bot di-mention
 - pesan merupakan reply ke pesan bot
 - user memakai command
 
-Tujuannya agar bot tidak menanggapi semua percakapan grup dan tidak boros token.
+Default user yang diizinkan:
+- `user_id: 177517779`
+- `username: @ferilee`
+
+Tujuannya agar bot tidak menanggapi semua percakapan grup, tidak dipakai sembarang anggota, dan tidak boros token.
 
 ---
 Dikembangkan oleh **Feri Lee** dengan ❤️ dan ⚡ Bun.

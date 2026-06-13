@@ -26,6 +26,8 @@ export const bot = new Bot(token);
 const TELEGRAM_MESSAGE_LIMIT = 4000;
 const DOCUMENT_DOWNLOAD_DIR = '/tmp/cybrabot-documents';
 const MAX_DOCUMENT_BYTES = Number(process.env.DOCUMENT_MAX_BYTES || 20 * 1024 * 1024);
+const GROUP_ALLOWED_USER_ID = Number(process.env.GROUP_ALLOWED_USER_ID || 177517779);
+const GROUP_ALLOWED_USERNAME = (process.env.GROUP_ALLOWED_USERNAME || 'ferilee').toLowerCase();
 
 mkdirSync(DOCUMENT_DOWNLOAD_DIR, { recursive: true });
 
@@ -65,6 +67,27 @@ function isGroupChat(ctx: any) {
   return ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 }
 
+function isAuthorizedGroupUser(ctx: any) {
+  if (!isGroupChat(ctx)) {
+    return true;
+  }
+
+  const from = ctx.from;
+  if (!from) {
+    return false;
+  }
+
+  if (from.id !== GROUP_ALLOWED_USER_ID) {
+    return false;
+  }
+
+  if (!GROUP_ALLOWED_USERNAME) {
+    return true;
+  }
+
+  return String(from.username || '').toLowerCase() === GROUP_ALLOWED_USERNAME;
+}
+
 function getBotUsername(ctx: any) {
   const username = ctx.me?.username || ctx.botInfo?.username || '';
   return String(username).toLowerCase();
@@ -98,6 +121,10 @@ function shouldHandleGroupText(ctx: any, text: string) {
     return true;
   }
 
+  if (!isAuthorizedGroupUser(ctx)) {
+    return false;
+  }
+
   if (text.trim().startsWith('/')) {
     return true;
   }
@@ -108,6 +135,10 @@ function shouldHandleGroupText(ctx: any, text: string) {
 function shouldHandleGroupMedia(ctx: any, caption = '') {
   if (!isGroupChat(ctx)) {
     return true;
+  }
+
+  if (!isAuthorizedGroupUser(ctx)) {
+    return false;
   }
 
   if (caption.trim().startsWith('/')) {
@@ -133,6 +164,14 @@ function normalizeIncomingText(text: string, ctx: any) {
     .trim();
 
   return normalized || text.trim();
+}
+
+function shouldHandleGroupCommand(ctx: any) {
+  if (!isGroupChat(ctx)) {
+    return true;
+  }
+
+  return isAuthorizedGroupUser(ctx);
 }
 
 function inferMimeTypeFromName(fileName: string) {
@@ -423,6 +462,10 @@ async function getConversationHistory(userId: number): Promise<ChatHistoryItem[]
 
 bot.command('start', async (ctx) => {
   try {
+    if (!shouldHandleGroupCommand(ctx)) {
+      return;
+    }
+
     const { first_name } = ctx.from!;
     await ensureUserRegistered(ctx.from!);
 
@@ -434,6 +477,10 @@ bot.command('start', async (ctx) => {
 });
 
 bot.command('dokumen', async (ctx) => {
+  if (!shouldHandleGroupCommand(ctx)) {
+    return;
+  }
+
   const startedAt = Date.now();
   const raw = ctx.message!.text.replace(/^\/dokumen(@\w+)?/i, '').trim();
   if (!raw) {
@@ -459,6 +506,10 @@ bot.command('dokumen', async (ctx) => {
 });
 
 bot.command('dokumen_reset', async (ctx) => {
+  if (!shouldHandleGroupCommand(ctx)) {
+    return;
+  }
+
   await clearActiveDocumentSession(ctx.from!.id);
   await replySafely(ctx, 'Dokumen aktif sudah saya hapus. Kirim PDF atau gambar baru kalau ingin mulai sesi dokumen lagi.');
 });
