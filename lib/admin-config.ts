@@ -14,6 +14,9 @@ export type AdminConfig = {
     intent: string;
     document: string;
   };
+  providers: {
+    openAICompatible: boolean;
+  };
   personaOverride: string;
   selfDescribe: {
     identity: string;
@@ -26,6 +29,7 @@ export type AdminConfig = {
 export type AdminConfigInput = {
   enabledTools?: Partial<AdminConfig['enabledTools']>;
   models?: Partial<AdminConfig['models']>;
+  providers?: Partial<AdminConfig['providers']>;
   personaOverride?: string;
   selfDescribe?: Partial<AdminConfig['selfDescribe']>;
 };
@@ -43,6 +47,9 @@ const defaultAdminConfig: AdminConfig = {
     chat: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     intent: process.env.GEMINI_INTENT_MODEL || 'gemini-2.5-flash-lite',
     document: process.env.GEMINI_DOCUMENT_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+  },
+  providers: {
+    openAICompatible: Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_COMPAT_API_KEY || process.env.TOKENROUTER_API_KEY),
   },
   personaOverride: '',
   selfDescribe: {
@@ -104,6 +111,10 @@ export async function getAdminConfig(): Promise<AdminConfig> {
         ...defaultAdminConfig.models,
         ...(parsed.models || {}),
       },
+      providers: {
+        ...defaultAdminConfig.providers,
+        ...(parsed.providers || {}),
+      },
       personaOverride: parsed.personaOverride || '',
       selfDescribe: {
         ...defaultAdminConfig.selfDescribe,
@@ -125,6 +136,10 @@ export async function saveAdminConfig(input: AdminConfigInput) {
     models: {
       ...existing.models,
       ...(input.models || {}),
+    },
+    providers: {
+      ...existing.providers,
+      ...(input.providers || {}),
     },
     personaOverride: input.personaOverride ?? existing.personaOverride,
     selfDescribe: {
@@ -152,4 +167,8 @@ export async function saveAdminConfig(input: AdminConfigInput) {
 export function isValidAdminToken(token: string | null | undefined) {
   const expected = process.env.ADMIN_TOKEN;
   return Boolean(expected) && token === expected;
+}
+
+export function isOpenAICompatibleConfigured() {
+  return Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_COMPAT_API_KEY || process.env.TOKENROUTER_API_KEY);
 }

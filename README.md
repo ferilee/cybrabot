@@ -97,6 +97,11 @@ Anda bisa mengganti model runtime lewat Telegram dengan prefiks provider:
 - `gemini:gemini-2.5-pro`
 - `tokenrouter:MiniMax-M3`
 
+Catatan:
+- `tokenrouter:MiniMax-M3` adalah model teks OpenAI-compatible.
+- Untuk PDF/gambar vision, bot tetap memakai jalur Gemini.
+- Jika `OPENAI_API_KEY` atau `OPENAI_BASE_URL` belum diisi, command `minimax` akan terlihat aktif tetapi belum bisa dipakai.
+
 Contoh:
 ```text
 /model chat tokenrouter:MiniMax-M3

@@ -7,7 +7,7 @@ import { users, messages } from '../db/schema';
 import { desc, eq } from 'drizzle-orm';
 import { analyzeText } from '../lib/nlp';
 import { generateDocumentDraft, generateResponse, generateTechnicalResponse, getIntent, type ChatHistoryItem } from '../lib/ai';
-import { getAdminConfig, saveAdminConfig } from '../lib/admin-config';
+import { getAdminConfig, isOpenAICompatibleConfigured, saveAdminConfig } from '../lib/admin-config';
 import { answerQuestionAboutDocument, explainDocumentFeatureError, summarizeDocumentFromPath } from '../lib/document-ai';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
 import { cleanupExportFile, detectDocumentExportRequest, materializeExportFile } from '../lib/document-export';
@@ -454,6 +454,13 @@ function getAvailableModelsText() {
     `- <code>minimax</code> = <code>tokenrouter:MiniMax-M3</code>\n` +
     `- <code>/model list</code> atau <code>/models</code> untuk menampilkan daftar ini`
   );
+}
+
+function getModelReadinessText() {
+  return isOpenAICompatibleConfigured()
+    ? `<b>Status provider OpenAI-compatible:</b> siap`
+    : `<b>Status provider OpenAI-compatible:</b> belum siap\n` +
+      `Isi <code>OPENAI_API_KEY</code> dan <code>OPENAI_BASE_URL=https://api.tokenrouter.com/v1</code>.`;
 }
 
 function stripHtmlMarkup(text: string) {
@@ -933,7 +940,8 @@ bot.command('model', async (ctx) => {
       `<code>/model chat minimax</code>\n` +
       `<code>/model intent gemini:gemini-2.5-flash-lite</code>\n` +
       `<code>/model document gemini:gemini-2.5-flash</code>\n` +
-      `<code>/model all gemini:gemini-2.5-flash</code>`
+      `<code>/model all gemini:gemini-2.5-flash</code>\n\n` +
+      `${getModelReadinessText()}`
     );
     return;
   }
@@ -952,6 +960,7 @@ bot.command('model', async (ctx) => {
       `<code>/model intent gemini:gemini-2.5-flash-lite</code>\n` +
       `<code>/model document gemini:gemini-2.5-flash</code>\n` +
       `<code>/model all gemini:gemini-2.5-flash</code>\n\n` +
+      `${getModelReadinessText()}\n\n` +
       `${getAvailableModelsText()}`
     );
     return;
@@ -982,7 +991,8 @@ bot.command('model', async (ctx) => {
     `<b>Model diperbarui</b>\n\n` +
     `- chat: <code>${updated.models.chat}</code>\n` +
     `- intent: <code>${updated.models.intent}</code>\n` +
-    `- document: <code>${updated.models.document}</code>`
+    `- document: <code>${updated.models.document}</code>\n\n` +
+    `${getModelReadinessText()}`
   );
 });
 
@@ -998,6 +1008,7 @@ bot.command('models', async (ctx) => {
     `- chat: <code>${config.models.chat}</code>\n` +
     `- intent: <code>${config.models.intent}</code>\n` +
     `- document: <code>${config.models.document}</code>\n\n` +
+    `${getModelReadinessText()}\n\n` +
     `${getAvailableModelsText()}`
   );
 });
