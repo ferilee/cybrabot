@@ -30,6 +30,7 @@ Isi variabel berikut:
 - `GEMINI_API_KEY`: API key untuk Gemini API.
 - `GEMINI_MODEL` *(opsional)*: default `gemini-2.5-flash`.
 - `GEMINI_INTENT_MODEL` *(opsional)*: default `gemini-2.5-flash-lite`.
+- `ADMIN_TOKEN` *(opsional)*: token untuk mengubah konfigurasi admin runtime via API.
 
 ### 2. Instalasi Dependensi
 ```bash
@@ -58,6 +59,23 @@ Setelah dijalankan, Anda dapat mengakses:
 - **Dashboard:** `http://localhost:4129/` (Visualisasi statistik bot)
 - **Health Check:** `http://localhost:4129/health`
 - **Webhook Endpoint:** `http://localhost:4129/api/webhook`
+- **Admin Config GET:** `GET /admin/config?token=...`
+- **Admin Config POST:** `POST /admin/config?token=...`
+
+Contoh update konfigurasi admin:
+```bash
+curl -X POST "http://localhost:4129/admin/config?token=ADMIN_TOKEN_ANDA" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabledTools": {
+      "math": true,
+      "caption": true,
+      "announcement": false,
+      "faq": true
+    },
+    "personaOverride": "Jawablah dengan nada lebih profesional untuk konteks sekolah."
+  }'
+```
 
 ## 🐳 Docker
 - `Dockerfile` sudah disiapkan untuk image production.

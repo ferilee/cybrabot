@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { logger } from 'hono/logger';
 import { handleUpdate } from '../bot';
+import { getAdminConfig, isValidAdminToken, saveAdminConfig } from '../lib/admin-config';
 import { db } from '../db';
 import { users, messages, telemetryEvents } from '../db/schema';
 import { count, desc } from 'drizzle-orm';
@@ -24,6 +25,7 @@ app.get('/', async (c) => {
     limit: 200,
     orderBy: [desc(telemetryEvents.createdAt), desc(telemetryEvents.id)],
   });
+  const adminConfig = await getAdminConfig();
   const totalUsers = userCount[0]?.value ?? 0;
   const totalMessages = msgCount[0]?.value ?? 0;
   const botMessages = recentMessages.filter((message) => message.role === 'bot');
@@ -256,6 +258,18 @@ app.get('/', async (c) => {
             </div>
         </div>
 
+        <div class="glass log-section" style="margin-bottom: 3rem;">
+            <h3 style="margin-top: 0;">Admin Controls</h3>
+            <div class="summary-row"><span>Math tool</span><strong>${adminConfig.enabledTools.math ? 'ON' : 'OFF'}</strong></div>
+            <div class="summary-row"><span>Caption tool</span><strong>${adminConfig.enabledTools.caption ? 'ON' : 'OFF'}</strong></div>
+            <div class="summary-row"><span>Announcement tool</span><strong>${adminConfig.enabledTools.announcement ? 'ON' : 'OFF'}</strong></div>
+            <div class="summary-row"><span>FAQ tool</span><strong>${adminConfig.enabledTools.faq ? 'ON' : 'OFF'}</strong></div>
+            <div class="summary-row"><span>Persona override</span><strong>${adminConfig.personaOverride ? 'ACTIVE' : 'EMPTY'}</strong></div>
+            <p style="opacity:0.75; font-size:0.9rem; margin-top: 1rem;">
+              Gunakan endpoint <code>/admin/config</code> dengan token admin untuk mengubah konfigurasi runtime.
+            </p>
+        </div>
+
         <div class="glass log-section">
             <h3 style="margin-top: 0;">Recent Activity</h3>
             ${recentMessageItems}
@@ -263,6 +277,44 @@ app.get('/', async (c) => {
     </body>
     </html>
   `);
+});
+
+app.get('/admin/config', async (c) => {
+  const token = c.req.query('token') || c.req.header('x-admin-token');
+  if (!isValidAdminToken(token)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const config = await getAdminConfig();
+  return c.json(config);
+});
+
+app.post('/admin/config', async (c) => {
+  const token = c.req.query('token') || c.req.header('x-admin-token');
+  if (!isValidAdminToken(token)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  let body: Record<string, unknown> = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  const updated = await saveAdminConfig({
+    personaOverride: typeof body.personaOverride === 'string' ? body.personaOverride : undefined,
+    enabledTools: typeof body.enabledTools === 'object' && body.enabledTools
+      ? {
+          math: Boolean((body.enabledTools as Record<string, unknown>).math),
+          caption: Boolean((body.enabledTools as Record<string, unknown>).caption),
+          announcement: Boolean((body.enabledTools as Record<string, unknown>).announcement),
+          faq: Boolean((body.enabledTools as Record<string, unknown>).faq),
+        }
+      : undefined,
+  });
+
+  return c.json({ ok: true, config: updated });
 });
 
 // Health check

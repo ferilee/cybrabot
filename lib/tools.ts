@@ -1,4 +1,5 @@
 import { retrieveKnowledge } from './knowledge';
+import type { AdminConfig } from './admin-config';
 
 type ToolResult = {
   handled: boolean;
@@ -173,11 +174,20 @@ function tryFaqTool(text: string): ToolResult {
   };
 }
 
-export function runLocalTool(text: string): ToolResult {
-  const tools = [tryMathTool, tryCaptionTool, tryAnnouncementTool, tryFaqTool];
+export function runLocalTool(text: string, config?: Pick<AdminConfig, 'enabledTools'>) {
+  const tools = [
+    { name: 'math', fn: tryMathTool },
+    { name: 'caption', fn: tryCaptionTool },
+    { name: 'announcement', fn: tryAnnouncementTool },
+    { name: 'faq', fn: tryFaqTool },
+  ] as const;
 
   for (const tool of tools) {
-    const result = tool(text);
+    if (config && config.enabledTools[tool.name] === false) {
+      continue;
+    }
+
+    const result = tool.fn(text);
     if (result.handled) {
       return result;
     }

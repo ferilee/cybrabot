@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
+import type { AdminConfig } from './admin-config';
 import { getKnowledgeContext } from './knowledge';
 import { logEvent } from './observability';
 import { formatPreferenceInstruction, type UserPreferences } from './preferences';
@@ -115,14 +116,15 @@ export async function getIntent(message: string): Promise<IntentResult> {
 export async function generateResponse(
   message: string,
   history: ChatHistoryItem[] = [],
-  preferences: UserPreferences = {}
+  preferences: UserPreferences = {},
+  adminConfig?: Pick<AdminConfig, 'personaOverride'>
 ): Promise<GenerationResult> {
   const knowledge = getKnowledgeContext(message);
   try {
     const result = await generateText(
       chatModel,
       casualInstructions,
-      `${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Pesan terbaru user:\n${message}`
+      `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Pesan terbaru user:\n${message}`
     );
     return {
       text: result.text,
@@ -148,14 +150,15 @@ export async function generateResponse(
 export async function generateTechnicalResponse(
   message: string,
   history: ChatHistoryItem[] = [],
-  preferences: UserPreferences = {}
+  preferences: UserPreferences = {},
+  adminConfig?: Pick<AdminConfig, 'personaOverride'>
 ): Promise<GenerationResult> {
   const knowledge = getKnowledgeContext(message);
   try {
     const result = await generateText(
       chatModel,
       technicalInstructions,
-      `${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
+      `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
     );
     return {
       text: result.text,

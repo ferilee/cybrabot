@@ -5,6 +5,7 @@ import { users, messages } from '../db/schema';
 import { desc, eq } from 'drizzle-orm';
 import { analyzeText } from '../lib/nlp';
 import { generateResponse, generateTechnicalResponse, getIntent, type ChatHistoryItem } from '../lib/ai';
+import { getAdminConfig } from '../lib/admin-config';
 import { logEvent } from '../lib/observability';
 import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
@@ -147,7 +148,8 @@ bot.on('message:text', async (ctx) => {
     }
 
     const preferences = await getUserPreferences(userId);
-    const toolResult = runLocalTool(text);
+    const adminConfig = await getAdminConfig();
+    const toolResult = runLocalTool(text, adminConfig);
 
     if (toolResult.handled && toolResult.response) {
       await logEvent('message.tool_used', {
@@ -174,7 +176,7 @@ bot.on('message:text', async (ctx) => {
     }
 
     if (intentResult.intent === 'technical') {
-      const response = await generateTechnicalResponse(text, history, preferences);
+      const response = await generateTechnicalResponse(text, history, preferences, adminConfig);
       await logEvent('message.ai_used', {
         userId,
         route: 'technical',
@@ -232,7 +234,7 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! ðŸš
       }
 
       // 5. Casual Chat with LLM
-      const response = await generateResponse(text, history, preferences);
+      const response = await generateResponse(text, history, preferences, adminConfig);
       await logEvent('message.ai_used', {
         userId,
         route: 'casual',
