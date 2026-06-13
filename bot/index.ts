@@ -5,6 +5,7 @@ import { users, messages } from '../db/schema';
 import { desc, eq } from 'drizzle-orm';
 import { analyzeText } from '../lib/nlp';
 import { generateResponse, generateTechnicalResponse, getIntent, type ChatHistoryItem } from '../lib/ai';
+import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
@@ -109,6 +110,23 @@ bot.on('message:text', async (ctx) => {
 
     const history = await getConversationHistory(userId);
     const lowerText = text.toLowerCase();
+    const preferenceUpdate = detectPreferenceUpdate(text);
+    if (preferenceUpdate) {
+      const savedPreferences = await saveUserPreferences(userId, preferenceUpdate);
+      const confirmation = formatPreferenceConfirmation(savedPreferences);
+      await replySafely(ctx, confirmation);
+
+      await db.insert(messages).values({
+        userId,
+        content: confirmation,
+        role: 'bot',
+        intent: 'preference',
+      });
+
+      return;
+    }
+
+    const preferences = await getUserPreferences(userId);
     const toolResult = runLocalTool(text);
 
     if (toolResult.handled && toolResult.response) {
@@ -125,7 +143,7 @@ bot.on('message:text', async (ctx) => {
     }
 
     if (intent === 'technical') {
-      const response = await generateTechnicalResponse(text, history);
+      const response = await generateTechnicalResponse(text, history, preferences);
       await replySafely(ctx, response);
 
       await db.insert(messages).values({
@@ -162,7 +180,7 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! ðŸš
       }
 
       // 5. Casual Chat with LLM
-      const response = await generateResponse(text, history);
+      const response = await generateResponse(text, history, preferences);
       await replySafely(ctx, response);
       
       // Save Bot Response

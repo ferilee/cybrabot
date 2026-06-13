@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
 import { formatKnowledgeContext } from './knowledge';
+import { formatPreferenceInstruction, type UserPreferences } from './preferences';
 
 if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
   console.warn('⚠️ GEMINI_API_KEY/GOOGLE_API_KEY is missing! AI responses will fail until you set it.');
@@ -79,12 +80,16 @@ export async function getIntent(message: string) {
   }
 }
 
-export async function generateResponse(message: string, history: ChatHistoryItem[] = []) {
+export async function generateResponse(
+  message: string,
+  history: ChatHistoryItem[] = [],
+  preferences: UserPreferences = {}
+) {
   try {
     return await generateText(
       chatModel,
       casualInstructions,
-      `${formatKnowledgeContext(message)}${formatHistory(history)}Pesan terbaru user:\n${message}`
+      `${formatPreferenceInstruction(preferences)}${formatKnowledgeContext(message)}${formatHistory(history)}Pesan terbaru user:\n${message}`
     );
   } catch (error: any) {
     console.error('AI Generation Error:', error?.message || error);
@@ -92,12 +97,16 @@ export async function generateResponse(message: string, history: ChatHistoryItem
   }
 }
 
-export async function generateTechnicalResponse(message: string, history: ChatHistoryItem[] = []) {
+export async function generateTechnicalResponse(
+  message: string,
+  history: ChatHistoryItem[] = [],
+  preferences: UserPreferences = {}
+) {
   try {
     return await generateText(
       chatModel,
       technicalInstructions,
-      `${formatKnowledgeContext(message)}${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
+      `${formatPreferenceInstruction(preferences)}${formatKnowledgeContext(message)}${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
     );
   } catch (error: any) {
     console.error('AI Generation Error:', error?.message || error);
