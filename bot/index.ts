@@ -793,7 +793,7 @@ bot.command('start', async (ctx) => {
     await replySafely(ctx, `Halo <b>Kakak ${first_name}</b>! Saya @CybraFeriBot. Ada yang bisa saya bantu hari ini? 🚀`);
   } catch (error) {
     console.error('Error in /start command:', error);
-    await ctx.reply('Terjadi kesalahan saat memulai bot. Silakan coba lagi nanti.');
+    await replySafely(ctx, 'Terjadi kesalahan saat memulai bot. Silakan coba lagi nanti.');
   }
 });
 
@@ -1382,7 +1382,7 @@ Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! �
       error: String(error),
       durationMs: Date.now() - startedAt,
     }, 'error');
-    await ctx.reply('Aduh, sepertinya otak digital saya sedikit korsleting. Bisa ulangi pertanyaannya? 🤖');
+    await replySafely(ctx, 'Aduh, sepertinya otak digital saya sedikit korsleting. Bisa ulangi pertanyaannya? 🤖');
   }
 });
 
