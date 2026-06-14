@@ -5,6 +5,52 @@ export function escapeHtml(text: string) {
     .replace(/>/g, '&gt;');
 }
 
+export function formatTelegramRichCard(input: {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  fields: Array<{ label: string; value: string }>;
+  footer?: string;
+}) {
+  return formatTelegramRichCardWithBody({
+    ...input,
+    bodyHtml: '',
+  });
+}
+
+export function formatTelegramRichCardWithBody(input: {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  fields: Array<{ label: string; value: string }>;
+  bodyHtml?: string;
+  footer?: string;
+}) {
+  const parts: string[] = [];
+  const titleLine = `<b>${escapeHtml(input.title)}</b>`;
+  const badgeLine = input.badge ? ` <code>${escapeHtml(input.badge)}</code>` : '';
+
+  parts.push(`${titleLine}${badgeLine}`);
+
+  if (input.subtitle) {
+    parts.push(`<i>${escapeHtml(input.subtitle)}</i>`);
+  }
+
+  for (const field of input.fields) {
+    parts.push(`◆ <b>${escapeHtml(field.label)}:</b> ${field.value}`);
+  }
+
+  if (input.bodyHtml) {
+    parts.push(input.bodyHtml);
+  }
+
+  if (input.footer) {
+    parts.push(`\n${input.footer}`);
+  }
+
+  return parts.join('\n');
+}
+
 function flushParagraph(lines: string[], output: string[]) {
   if (!lines.length) {
     return;

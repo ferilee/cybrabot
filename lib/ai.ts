@@ -5,7 +5,7 @@ import type { AdminConfig } from './admin-config';
 import { getKnowledgeContext } from './knowledge';
 import { logEvent } from './observability';
 import { formatPreferenceInstruction, type UserPreferences } from './preferences';
-import { formatTelegramRichText } from './telegram-rich';
+import { formatTelegramRichCardWithBody, formatTelegramRichText } from './telegram-rich';
 
 if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
   console.warn('⚠️ GEMINI_API_KEY/GOOGLE_API_KEY is missing! AI responses will fail until you set it.');
@@ -233,7 +233,18 @@ export async function generateResponse(
       `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Pesan terbaru user:\n${message}`
     );
     return {
-      text: formatTelegramRichText(result.text),
+      text: formatTelegramRichCardWithBody({
+        title: 'Jawaban CybraFeriBot',
+        subtitle: 'Chat santai',
+        badge: 'AI',
+        fields: [
+          { label: 'Model', value: model },
+          { label: 'Knowledge', value: String(knowledge.matches.length) },
+          { label: 'Context', value: String(history.length) },
+          { label: 'Latency', value: `${result.latencyMs} ms` },
+        ],
+        bodyHtml: formatTelegramRichText(result.text),
+      }),
       model,
       latencyMs: result.latencyMs,
       knowledgeMatches: knowledge.matches,
@@ -243,7 +254,17 @@ export async function generateResponse(
   } catch (error: any) {
     await logEvent('ai.generation_error', { model, error: error?.message || String(error) }, 'error');
     return {
-      text: 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!',
+      text: formatTelegramRichCardWithBody({
+        title: 'Jawaban CybraFeriBot',
+        subtitle: 'Chat santai',
+        badge: 'ERR',
+        fields: [
+          { label: 'Model', value: model },
+          { label: 'Knowledge', value: String(knowledge.matches.length) },
+          { label: 'Context', value: String(history.length) },
+        ],
+        bodyHtml: formatTelegramRichText('Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!'),
+      }),
       model,
       latencyMs: 0,
       knowledgeMatches: knowledge.matches,
@@ -268,7 +289,18 @@ export async function generateTechnicalResponse(
       `${adminConfig?.personaOverride ? `${adminConfig.personaOverride}\n` : ''}${formatPreferenceInstruction(preferences)}${knowledge.context}${formatHistory(history)}Permintaan teknis terbaru user:\n${message}`
     );
     return {
-      text: formatTelegramRichText(result.text),
+      text: formatTelegramRichCardWithBody({
+        title: 'Jawaban Teknis',
+        subtitle: 'Mode praktis',
+        badge: 'TECH',
+        fields: [
+          { label: 'Model', value: model },
+          { label: 'Knowledge', value: String(knowledge.matches.length) },
+          { label: 'Context', value: String(history.length) },
+          { label: 'Latency', value: `${result.latencyMs} ms` },
+        ],
+        bodyHtml: formatTelegramRichText(result.text),
+      }),
       model,
       latencyMs: result.latencyMs,
       knowledgeMatches: knowledge.matches,
@@ -278,7 +310,17 @@ export async function generateTechnicalResponse(
   } catch (error: any) {
     await logEvent('ai.generation_error', { model, error: error?.message || String(error) }, 'error');
     return {
-      text: 'Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!',
+      text: formatTelegramRichCardWithBody({
+        title: 'Jawaban Teknis',
+        subtitle: 'Mode praktis',
+        badge: 'ERR',
+        fields: [
+          { label: 'Model', value: model },
+          { label: 'Knowledge', value: String(knowledge.matches.length) },
+          { label: 'Context', value: String(history.length) },
+        ],
+        bodyHtml: formatTelegramRichText('Maaf, sistem AI saya sedang mengalami gangguan teknis. Coba lagi nanti!'),
+      }),
       model,
       latencyMs: 0,
       knowledgeMatches: knowledge.matches,

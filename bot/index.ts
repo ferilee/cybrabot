@@ -16,7 +16,7 @@ import { getProviderQuotaStatus } from '../lib/provider-status';
 import { logEvent } from '../lib/observability';
 import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
-import { escapeHtml } from '../lib/telegram-rich';
+import { escapeHtml, formatTelegramRichCard } from '../lib/telegram-rich';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -377,7 +377,16 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
   if (!session) {
     await replySafely(
       ctx,
-      'Belum ada dokumen aktif. Kirim PDF atau gambar dulu, nanti saya ringkas dan saya pakai untuk tanya jawab.'
+      formatTelegramRichCard({
+        title: 'Dokumen aktif belum ada',
+        subtitle: 'Kirim file dulu untuk memulai sesi.',
+        badge: 'DOC',
+        fields: [
+          { label: 'Status', value: 'Belum ada dokumen aktif' },
+          { label: 'Saran', value: 'Kirim PDF, gambar, DOCX, atau XLSX terlebih dahulu' },
+        ],
+        footer: 'Setelah itu, Anda bisa tanya isi file tersebut dengan natural.',
+      })
     );
     return true;
   }
@@ -541,7 +550,18 @@ async function sendActiveDocumentFile(ctx: any, startedAt = Date.now()) {
       : null;
 
   if (!fileSource) {
-    await replySafely(ctx, 'Saya belum menemukan file asli yang bisa dikirim ulang.');
+    await replySafely(
+      ctx,
+      formatTelegramRichCard({
+        title: 'File asli belum ditemukan',
+        subtitle: 'Sesi ada, tetapi file lokal tidak tersedia.',
+        badge: 'WARN',
+        fields: [
+          { label: 'Status', value: 'File sumber belum bisa diakses' },
+          { label: 'Saran', value: 'Upload ulang file jika perlu dikirim lagi' },
+        ],
+      })
+    );
     return true;
   }
 
@@ -790,10 +810,35 @@ bot.command('start', async (ctx) => {
     const { first_name } = ctx.from!;
     await ensureUserRegistered(ctx.from!);
 
-    await replySafely(ctx, `Halo <b>Kakak ${first_name}</b>! Saya @CybraFeriBot. Ada yang bisa saya bantu hari ini? 🚀`);
+    const config = await getAdminConfig();
+    await replySafely(
+      ctx,
+      formatTelegramRichCard({
+        title: `Halo Kakak ${first_name}!`,
+        subtitle: 'Sesi siap dipakai.',
+        badge: 'NEW',
+        fields: [
+          { label: 'Bot', value: '@CybraFeriBot' },
+          { label: 'Model Chat', value: escapeHtml(config.models.chat) },
+          { label: 'Provider', value: isOpenAICompatibleConfigured() ? 'OpenAI-compatible' : 'Gemini' },
+          { label: 'Tip', value: 'Gunakan /model untuk mengganti model aktif.' },
+        ],
+        footer: 'Ada yang bisa saya bantu hari ini?',
+      })
+    );
   } catch (error) {
     console.error('Error in /start command:', error);
-    await replySafely(ctx, 'Terjadi kesalahan saat memulai bot. Silakan coba lagi nanti.');
+    await replySafely(
+      ctx,
+      formatTelegramRichCard({
+        title: 'Start gagal',
+        subtitle: 'Ada gangguan saat memulai sesi bot.',
+        badge: 'ERR',
+        fields: [
+          { label: 'Status', value: 'Silakan coba lagi nanti' },
+        ],
+      })
+    );
   }
 });
 
@@ -809,16 +854,32 @@ bot.command('dokumen', async (ctx) => {
     if (!session) {
       await replySafely(
         ctx,
-        'Belum ada dokumen aktif. Kirim PDF atau gambar dulu, lalu gunakan <b>/dokumen pertanyaan Anda</b>.'
+        formatTelegramRichCard({
+          title: 'Dokumen aktif belum ada',
+          subtitle: 'Sesi belum dimulai.',
+          badge: 'DOC',
+          fields: [
+            { label: 'Aksi', value: 'Kirim PDF/gambar/DOCX/XLSX dulu' },
+            { label: 'Lalu', value: 'Gunakan /dokumen pertanyaan Anda' },
+          ],
+          footer: 'Anda juga bisa pakai caption saat upload untuk memberi instruksi awal.',
+        })
       );
       return;
     }
 
     await replySafely(
       ctx,
-      `<b>Dokumen aktif:</b> ${session.title}\n` +
-      `${session.summary ? `\n<b>Ringkasan singkat:</b>\n${session.summary}` : ''}\n\n` +
-      `Lanjutkan dengan format <b>/dokumen pertanyaan Anda</b>.`
+      formatTelegramRichCard({
+        title: session.title,
+        subtitle: 'Dokumen aktif saat ini',
+        badge: 'ACTIVE',
+        fields: [
+          { label: 'Ringkasan', value: session.summary || 'Belum ada ringkasan singkat.' },
+          { label: 'Tanya', value: 'Gunakan /dokumen pertanyaan Anda' },
+        ],
+        footer: 'Dokumen ini akan dipakai sampai Anda reset atau ganti sesi.',
+      })
     );
     return;
   }
@@ -832,7 +893,18 @@ bot.command('dokumen_reset', async (ctx) => {
   }
 
   await clearActiveDocumentSession(ctx.from!.id);
-  await replySafely(ctx, 'Dokumen aktif sudah saya hapus. Kirim PDF atau gambar baru kalau ingin mulai sesi dokumen lagi.');
+  await replySafely(
+    ctx,
+    formatTelegramRichCard({
+      title: 'Dokumen aktif dihapus',
+      subtitle: 'Sesi dokumen selesai.',
+      badge: 'OK',
+      fields: [
+        { label: 'Status', value: 'Dokumen aktif sudah di-reset' },
+        { label: 'Lanjut', value: 'Kirim file baru untuk memulai sesi baru' },
+      ],
+    })
+  );
 });
 
 bot.command('dokumen_kirim', async (ctx) => {
@@ -851,18 +923,17 @@ bot.command('admin_status', async (ctx) => {
   const config = await getAdminConfig();
   await replySafely(
     ctx,
-    `<b>Status Admin CybraFeriBot</b>\n\n` +
-    `<b>Tools:</b>\n` +
-    `- math: ${config.enabledTools.math ? 'on' : 'off'}\n` +
-    `- caption: ${config.enabledTools.caption ? 'on' : 'off'}\n` +
-    `- announcement: ${config.enabledTools.announcement ? 'on' : 'off'}\n` +
-    `- faq: ${config.enabledTools.faq ? 'on' : 'off'}\n\n` +
-    `<b>Models:</b>\n` +
-    `- chat: ${config.models.chat}\n` +
-    `- intent: ${config.models.intent}\n` +
-    `- document: ${config.models.document}\n\n` +
-    `<b>Persona override:</b> ${config.personaOverride ? 'active' : 'empty'}\n` +
-    `<b>Self templates:</b> ready`
+    formatTelegramRichCard({
+      title: 'Status Admin CybraFeriBot',
+      subtitle: 'Ringkasan runtime config',
+      badge: 'ADMIN',
+      fields: [
+        { label: 'Tools', value: `math:${config.enabledTools.math ? 'on' : 'off'}, caption:${config.enabledTools.caption ? 'on' : 'off'}, announcement:${config.enabledTools.announcement ? 'on' : 'off'}, faq:${config.enabledTools.faq ? 'on' : 'off'}` },
+        { label: 'Models', value: `chat:${config.models.chat}, intent:${config.models.intent}, document:${config.models.document}` },
+        { label: 'Persona', value: config.personaOverride ? 'active' : 'empty' },
+        { label: 'Self templates', value: 'ready' },
+      ],
+    })
   );
 });
 
@@ -947,18 +1018,26 @@ bot.command('model', async (ctx) => {
   if (!raw || raw.toLowerCase() === 'list' || raw.toLowerCase() === 'help') {
     await replySafely(
       ctx,
-      `<b>Model aktif saat ini</b>\n\n` +
-      `- chat: <code>${config.models.chat}</code>\n` +
-      `- intent: <code>${config.models.intent}</code>\n` +
-      `- document: <code>${config.models.document}</code>\n\n` +
-      `${getAvailableModelsText()}\n\n` +
-      `<b>Contoh update</b>\n` +
-      `<code>/model chat gemini:gemini-2.5-pro</code>\n` +
-      `<code>/model chat minimax</code>\n` +
-      `<code>/model intent gemini:gemini-2.5-flash-lite</code>\n` +
-      `<code>/model document gemini:gemini-2.5-flash</code>\n` +
-      `<code>/model all gemini:gemini-2.5-flash</code>\n\n` +
-      `${getModelReadinessText()}`
+      formatTelegramRichCard({
+        title: 'Model aktif saat ini',
+        subtitle: 'Konfigurasi runtime bot',
+        badge: 'MODEL',
+        fields: [
+          { label: 'Chat', value: `<code>${escapeHtml(config.models.chat)}</code>` },
+          { label: 'Intent', value: `<code>${escapeHtml(config.models.intent)}</code>` },
+          { label: 'Document', value: `<code>${escapeHtml(config.models.document)}</code>` },
+          { label: 'Provider', value: isOpenAICompatibleConfigured() ? 'siap' : 'belum siap' },
+        ],
+        footer:
+          `${getAvailableModelsText()}\n\n` +
+          `<b>Contoh update</b>\n` +
+          `<code>/model chat gemini:gemini-2.5-pro</code>\n` +
+          `<code>/model chat minimax</code>\n` +
+          `<code>/model intent gemini:gemini-2.5-flash-lite</code>\n` +
+          `<code>/model document gemini:gemini-2.5-flash</code>\n` +
+          `<code>/model all gemini:gemini-2.5-flash</code>\n\n` +
+          `${getModelReadinessText()}`
+      })
     );
     return;
   }
@@ -1005,11 +1084,18 @@ bot.command('model', async (ctx) => {
   const updated = await saveAdminConfig(updates as any);
   await replySafely(
     ctx,
-    `<b>Model diperbarui</b>\n\n` +
-    `- chat: <code>${updated.models.chat}</code>\n` +
-    `- intent: <code>${updated.models.intent}</code>\n` +
-    `- document: <code>${updated.models.document}</code>\n\n` +
-    `${getModelReadinessText()}`
+    formatTelegramRichCard({
+      title: 'Model diperbarui',
+      subtitle: 'Runtime config tersimpan',
+      badge: 'OK',
+      fields: [
+        { label: 'Chat', value: `<code>${escapeHtml(updated.models.chat)}</code>` },
+        { label: 'Intent', value: `<code>${escapeHtml(updated.models.intent)}</code>` },
+        { label: 'Document', value: `<code>${escapeHtml(updated.models.document)}</code>` },
+        { label: 'Provider', value: isOpenAICompatibleConfigured() ? 'siap' : 'belum siap' },
+      ],
+      footer: getModelReadinessText(),
+    })
   );
 });
 
@@ -1040,18 +1126,23 @@ bot.command('quota', async (ctx) => {
   const chatProvider = describeModelProvider(config.models.chat);
 
   const statusText = status.ok
-    ? `<b>Status kuota provider:</b> tersedia\n<b>Endpoint:</b> <code>${escapeHtml(status.endpoint)}</code>\n\n<pre>${escapeHtml(status.summary)}</pre>`
-    : `<b>Status kuota provider:</b> belum bisa dibaca\n${status.endpoint ? `<b>Endpoint dicek:</b> <code>${escapeHtml(status.endpoint)}</code>\n` : ''}\n<pre>${escapeHtml(status.summary)}</pre>`;
+    ? `Tersedia\nEndpoint: ${status.endpoint}\n\n${status.summary}`
+    : `Belum bisa dibaca\n${status.endpoint ? `Endpoint dicek: ${status.endpoint}\n` : ''}${status.summary}`;
 
   await replySafely(
     ctx,
-    `<b>Status Kuota Token</b>\n\n` +
-    `<b>Model chat aktif:</b> <code>${escapeHtml(config.models.chat)}</code>\n` +
-    `<b>Provider chat:</b> ${escapeHtml(chatProvider)}\n` +
-    `<b>Model intent:</b> <code>${escapeHtml(config.models.intent)}</code>\n` +
-    `<b>Model dokumen:</b> <code>${escapeHtml(config.models.document)}</code>\n\n` +
-    `${statusText}\n\n` +
-    `<i>Catatan: jika model chat masih Gemini, kuota TokenRouter/OpenAI-compatible memang tidak relevan.</i>`
+    formatTelegramRichCard({
+      title: 'Status Kuota Token',
+      subtitle: 'Provider yang dipakai model aktif',
+      badge: 'QUOTA',
+      fields: [
+        { label: 'Model Chat', value: `<code>${escapeHtml(config.models.chat)}</code>` },
+        { label: 'Provider', value: escapeHtml(chatProvider) },
+        { label: 'Intent', value: `<code>${escapeHtml(config.models.intent)}</code>` },
+        { label: 'Document', value: `<code>${escapeHtml(config.models.document)}</code>` },
+      ],
+      footer: `<b>Status provider:</b>\n<pre>${escapeHtml(statusText)}</pre>\n\n<i>Kalau model chat masih Gemini, kuota TokenRouter/OpenAI-compatible memang tidak relevan.</i>`,
+    })
   );
 });
 
