@@ -33,6 +33,8 @@ Isi variabel berikut:
 - `GEMINI_DOCUMENT_MODEL` *(opsional)*: model untuk ringkasan PDF/gambar dan tanya jawab dokumen.
 - `OPENAI_API_KEY` *(opsional)*: dipakai untuk provider OpenAI-compatible seperti TokenRouter/MiniMax.
 - `OPENAI_BASE_URL` *(opsional)*: base URL provider OpenAI-compatible, default `https://api.tokenrouter.com/v1`.
+- `TOKENROUTER_API_KEY` *(opsional)*: alias eksplisit untuk key TokenRouter, dipakai saat Anda memakai MiniMax via TokenRouter.
+- `TOKENROUTER_BASE_URL` *(opsional)*: alias eksplisit untuk base URL TokenRouter.
 - `DOCUMENT_MAX_BYTES` *(opsional)*: batas ukuran file yang diproses bot, default `20971520` (20MB).
 - `ADMIN_TOKEN` *(opsional)*: token untuk mengubah konfigurasi admin runtime via API.
 - `GROUP_ALLOWED_USER_ID` *(opsional)*: hanya user ini yang boleh memanggil bot di grup, default `177517779`.
@@ -101,7 +103,9 @@ Anda bisa mengganti model runtime lewat Telegram dengan prefiks provider:
 Catatan:
 - `tokenrouter:MiniMax-M3` adalah model teks OpenAI-compatible.
 - Untuk PDF/gambar vision, bot tetap memakai jalur Gemini.
-- Jika `OPENAI_API_KEY` atau `OPENAI_BASE_URL` belum diisi, command `minimax` akan terlihat aktif tetapi belum bisa dipakai.
+- Jika `OPENAI_API_KEY` atau `TOKENROUTER_API_KEY` belum diisi, command `minimax` akan terlihat aktif tetapi belum bisa dipakai.
+- `TOKENROUTER_API_KEY` harus merupakan key TokenRouter yang valid.
+- Anda juga bisa mengisi `TOKENROUTER_BASE_URL` sebagai alias eksplisit.
 
 Contoh:
 ```text

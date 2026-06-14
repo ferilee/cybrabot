@@ -18,7 +18,11 @@ export type ProviderQuotaStatus =
 
 function getOpenAICompatibleConfig() {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_COMPAT_API_KEY || process.env.TOKENROUTER_API_KEY || '';
-  const baseURL = process.env.OPENAI_BASE_URL || process.env.OPENAI_COMPAT_BASE_URL || 'https://api.tokenrouter.com/v1';
+  const baseURL =
+    process.env.OPENAI_BASE_URL ||
+    process.env.OPENAI_COMPAT_BASE_URL ||
+    process.env.TOKENROUTER_BASE_URL ||
+    'https://api.tokenrouter.com/v1';
 
   return {
     apiKey: apiKey.trim(),

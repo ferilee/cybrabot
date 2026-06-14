@@ -462,7 +462,8 @@ function getModelReadinessText() {
   return isOpenAICompatibleConfigured()
     ? `<b>Status provider OpenAI-compatible:</b> siap`
     : `<b>Status provider OpenAI-compatible:</b> belum siap\n` +
-      `Isi <code>OPENAI_API_KEY</code> dan <code>OPENAI_BASE_URL=https://api.tokenrouter.com/v1</code>.`;
+      `Isi <code>OPENAI_API_KEY</code> dan <code>OPENAI_BASE_URL=https://api.tokenrouter.com/v1</code>\n` +
+      `atau <code>TOKENROUTER_API_KEY</code> dan <code>TOKENROUTER_BASE_URL=https://api.tokenrouter.com/v1</code>.`;
 }
 
 function describeModelProvider(model: string) {

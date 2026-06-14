@@ -15,7 +15,11 @@ const client = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'dummy_key',
 });
 
-const openAIBaseURL = process.env.OPENAI_BASE_URL || process.env.OPENAI_COMPAT_BASE_URL || 'https://api.tokenrouter.com/v1';
+const openAIBaseURL =
+  process.env.OPENAI_BASE_URL ||
+  process.env.OPENAI_COMPAT_BASE_URL ||
+  process.env.TOKENROUTER_BASE_URL ||
+  'https://api.tokenrouter.com/v1';
 const openAIApiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_COMPAT_API_KEY || process.env.TOKENROUTER_API_KEY || '';
 const openAIClient = openAIApiKey
   ? new OpenAI({

@@ -49,7 +49,11 @@ const defaultAdminConfig: AdminConfig = {
     document: process.env.GEMINI_DOCUMENT_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
   },
   providers: {
-    openAICompatible: Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_COMPAT_API_KEY || process.env.TOKENROUTER_API_KEY),
+    openAICompatible: Boolean(
+      process.env.OPENAI_API_KEY ||
+      process.env.OPENAI_COMPAT_API_KEY ||
+      process.env.TOKENROUTER_API_KEY
+    ),
   },
   personaOverride: '',
   selfDescribe: {
@@ -170,5 +174,9 @@ export function isValidAdminToken(token: string | null | undefined) {
 }
 
 export function isOpenAICompatibleConfigured() {
-  return Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_COMPAT_API_KEY || process.env.TOKENROUTER_API_KEY);
+  return Boolean(
+    process.env.OPENAI_API_KEY ||
+    process.env.OPENAI_COMPAT_API_KEY ||
+    process.env.TOKENROUTER_API_KEY
+  );
 }
