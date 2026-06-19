@@ -17,7 +17,7 @@ import { logEvent } from '../lib/observability';
 import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
 import { runSkillChat } from '../lib/skill-chat';
 import { runLocalTool } from '../lib/tools';
-import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText } from '../lib/telegram-rich';
+import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent } from '../lib/telegram-rich';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -118,7 +118,8 @@ async function sendRichTelegramMessage(ctx: any, text: string) {
 }
 
 async function replySafely(ctx: any, text: string) {
-  const limitedText = limitRichTelegramMessage(text);
+  const renderedText = renderTelegramMessageContent(text);
+  const limitedText = limitRichTelegramMessage(renderedText);
 
   try {
     await sendRichTelegramMessage(ctx, limitedText);

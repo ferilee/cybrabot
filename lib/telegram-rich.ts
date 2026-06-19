@@ -210,3 +210,20 @@ export function formatTelegramRichText(input: string) {
 
   return output.join('\n\n');
 }
+
+export function containsTelegramHtml(input: string) {
+  return /<\/?(b|strong|i|em|u|s|code|pre|blockquote|a|ul|ol|li)\b[^>]*>/i.test(input);
+}
+
+export function renderTelegramMessageContent(input: string) {
+  const normalized = input.replace(/\r\n/g, '\n').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (containsTelegramHtml(normalized)) {
+    return normalized;
+  }
+
+  return formatTelegramRichText(normalized);
+}

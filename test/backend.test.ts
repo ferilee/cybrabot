@@ -16,7 +16,7 @@ import {
   saveUserPreferences,
 } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
-import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText } from '../lib/telegram-rich';
+import { containsTelegramHtml, escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent } from '../lib/telegram-rich';
 import { getWebSkill, loadWebSkills, selectWebSkill } from '../lib/web-skills';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
 import { detectPdfSourceKind, extractTextFromDocument, isDocxMimeType, isPdfMimeType, isTextDocumentMimeType, isXlsxMimeType } from '../lib/document-source';
@@ -124,6 +124,11 @@ describe('backend utilities', () => {
     expect(inline).toContain('<i>miring</i>');
     expect(inline).toContain('<code>kode</code>');
     expect(inline).toContain('<a href="https://example.com">link</a>');
+
+    const htmlInput = '<b>Halo</b> <i>dunia</i><pre><code>tes</code></pre>';
+    expect(containsTelegramHtml(htmlInput)).toBe(true);
+    expect(renderTelegramMessageContent(htmlInput)).toBe(htmlInput);
+    expect(renderTelegramMessageContent('**Halo**')).toContain('<b>Halo</b>');
   });
 
   test('admin config loads defaults, saves merge, and validates token', async () => {
