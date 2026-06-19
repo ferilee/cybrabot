@@ -16,7 +16,7 @@ import {
   saveUserPreferences,
 } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
-import { containsTelegramHtml, escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
+import { containsTelegramHtml, escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, getTelegramDraftStatusHtml, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
 import { renderResponseTemplate } from '../lib/runtime-responses';
 import { getWebSkill, loadWebSkills, selectWebSkill } from '../lib/web-skills';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
@@ -145,6 +145,10 @@ describe('backend utilities', () => {
     expect(formatTelegramRichText('```math\nsin x = a/b\n```')).toContain('<tg-math-block>\\sin x = \\frac{a}{b}</tg-math-block>');
     expect(formatTelegramRichText('- [x] selesai\n- [ ] belum')).toContain('☑ selesai');
     expect(formatTelegramRichText('---')).toContain('<hr/>');
+    expect(getTelegramDraftStatusHtml('text')).toContain('<tg-thinking>');
+    expect(getTelegramDraftStatusHtml('document')).toContain('dokumen');
+    expect(getTelegramDraftStatusHtml('photo')).toContain('gambar');
+    expect(getTelegramDraftStatusHtml('export')).toContain('ekspor');
 
     const htmlInput = '<b>Halo</b> <i>dunia</i><pre><code>tes</code></pre><details open><summary>Ringkas</summary><p>Isi</p></details><mark>tandai</mark><sub>2</sub><sup>3</sup>';
     expect(containsTelegramHtml(htmlInput)).toBe(true);

@@ -18,7 +18,7 @@ import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreference
 import { getRuntimeResponse } from '../lib/runtime-responses';
 import { runSkillChat } from '../lib/skill-chat';
 import { runLocalTool } from '../lib/tools';
-import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
+import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, getTelegramDraftStatusHtml, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -37,6 +37,7 @@ const GROUP_ALLOWED_USERNAME = (process.env.GROUP_ALLOWED_USERNAME || 'ferilee')
 const PROCESSED_UPDATE_TTL_MS = 10 * 60 * 1000;
 const processedUpdateIds = new Map<number, number>();
 const CHAT_ACTION_INTERVAL_MS = 3500;
+const RICH_DRAFT_REFRESH_INTERVAL_MS = 9000;
 
 type ProcessingIndicatorMode = 'text' | 'document' | 'photo' | 'export';
 type TelegramChatAction =
@@ -70,6 +71,9 @@ function startProcessingIndicator(ctx: any, mode: ProcessingIndicatorMode) {
   let index = 0;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  let richDraftDisabled = false;
+  const richDraftId = resolveRichDraftId(ctx);
 
   const tick = async () => {
     if (stopped || !ctx?.chat?.id) {
@@ -91,12 +95,47 @@ function startProcessingIndicator(ctx: any, mode: ProcessingIndicatorMode) {
     }
   };
 
+  const streamDraft = async () => {
+    if (stopped || richDraftDisabled || !richDraftId || !isPrivateChat(ctx)) {
+      return;
+    }
+
+    try {
+      await ctx.api.callApi('sendRichMessageDraft', {
+        chat_id: ctx.chat.id,
+        message_thread_id: typeof ctx.message?.message_thread_id === 'number' ? ctx.message.message_thread_id : undefined,
+        draft_id: richDraftId,
+        rich_message: {
+          html: getTelegramDraftStatusHtml(mode),
+        },
+      } as any);
+    } catch (error) {
+      richDraftDisabled = true;
+      await logEvent('telegram.rich_draft_failed', {
+        chatId: ctx?.chat?.id ?? null,
+        messageId: ctx?.message?.message_id ?? null,
+        error: stringifyTelegramError(error),
+      }, 'warn');
+      return;
+    }
+
+    if (!stopped && !richDraftDisabled) {
+      draftTimer = setTimeout(() => {
+        void streamDraft();
+      }, RICH_DRAFT_REFRESH_INTERVAL_MS);
+    }
+  };
+
   void tick();
+  void streamDraft();
 
   const stop = () => {
     stopped = true;
     if (timer) {
       clearTimeout(timer);
+    }
+    if (draftTimer) {
+      clearTimeout(draftTimer);
     }
     if (ctx?.[INDICATOR_STOP_KEY] === stop) {
       delete ctx[INDICATOR_STOP_KEY];
@@ -168,6 +207,25 @@ function buildReplyParameters(ctx: any) {
   }
 
   return { message_id: messageId };
+}
+
+function isPrivateChat(ctx: any) {
+  return ctx?.chat?.type === 'private';
+}
+
+function resolveRichDraftId(ctx: any) {
+  const fromMessage = Number(ctx?.message?.message_id || 0);
+  if (Number.isInteger(fromMessage) && fromMessage > 0) {
+    return fromMessage;
+  }
+
+  const fromUpdate = Number(ctx?.update?.update_id || 0);
+  if (Number.isInteger(fromUpdate) && fromUpdate > 0) {
+    return fromUpdate;
+  }
+
+  const fallback = Date.now() % 2147483647;
+  return fallback > 0 ? fallback : 1;
 }
 
 async function sendRichTelegramMessage(ctx: any, text: string) {

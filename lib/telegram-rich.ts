@@ -5,6 +5,8 @@ export function escapeHtml(text: string) {
     .replace(/>/g, '&gt;');
 }
 
+export type TelegramDraftMode = 'text' | 'document' | 'photo' | 'export';
+
 type PlaceholderMap = Map<string, string>;
 
 function createPlaceholderStore() {
@@ -464,6 +466,20 @@ export function simplifyTelegramRichContent(input: string) {
   }
 
   return simplified;
+}
+
+export function getTelegramDraftStatusHtml(mode: TelegramDraftMode) {
+  switch (mode) {
+    case 'document':
+      return '<tg-thinking>Cybra sedang membaca dokumen dan menyusun jawaban...</tg-thinking>';
+    case 'photo':
+      return '<tg-thinking>Cybra sedang menganalisis gambar dan menyiapkan respons...</tg-thinking>';
+    case 'export':
+      return '<tg-thinking>Cybra sedang menyiapkan file ekspor...</tg-thinking>';
+    case 'text':
+    default:
+      return '<tg-thinking>Cybra sedang menyusun jawaban...</tg-thinking>';
+  }
 }
 
 export function renderTelegramMessageContent(input: string) {
