@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { logger } from 'hono/logger';
 import type { Context } from 'hono';
+import { join } from 'path';
 import { handleUpdate } from '../bot';
 import { getAdminConfig, isValidAdminToken, saveAdminConfig } from '../lib/admin-config';
 import { deleteKnowledgeDocument, listKnowledgeDocuments, saveKnowledgeDocument } from '../lib/knowledge';
@@ -102,10 +103,11 @@ function parseTelemetryPayload(payload: string | null) {
 }
 
 function getAssetPath(fileName: string) {
+  const assetsDir = join(import.meta.dir, '..', 'assets');
   const allowedAssets = new Map([
-    ['cybrabot-logo.png', '/home/ferilee/DEV/cybraferibot/assets/cybrabot-logo.png'],
-    ['favicon.png', '/home/ferilee/DEV/cybraferibot/assets/favicon.png'],
-    ['favicon.ico', '/home/ferilee/DEV/cybraferibot/assets/favicon.ico'],
+    ['cybrabot-logo.png', join(assetsDir, 'cybrabot-logo.png')],
+    ['favicon.png', join(assetsDir, 'favicon.png')],
+    ['favicon.ico', join(assetsDir, 'favicon.ico')],
   ]);
 
   return allowedAssets.get(fileName) || null;
