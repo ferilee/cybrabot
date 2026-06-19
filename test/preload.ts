@@ -13,6 +13,7 @@ process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = dbPath;
 process.env.KNOWLEDGE_DIR = knowledgeDir;
 process.env.ADMIN_TOKEN = 'test-admin-token';
+process.env.SESSION_SECRET = 'test-session-secret';
 process.env.TELEGRAM_BOT_TOKEN = '999999:TEST_TOKEN';
 process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-gemini-key';
 

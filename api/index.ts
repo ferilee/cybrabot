@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { logger } from 'hono/logger';
+import type { Context } from 'hono';
 import { handleUpdate } from '../bot';
 import { getAdminConfig, isValidAdminToken, saveAdminConfig } from '../lib/admin-config';
 import { deleteKnowledgeDocument, listKnowledgeDocuments, saveKnowledgeDocument } from '../lib/knowledge';
@@ -7,6 +8,15 @@ import { getProviderQuotaStatus } from '../lib/provider-status';
 import { resetUserPreferences } from '../lib/preferences';
 import { getManagedExportFile, getWebChatSkills, handleWebChat } from '../lib/web-chat';
 import { getAgentReachStatus } from '../lib/agent-reach';
+import {
+  clearWebSession,
+  consumeOAuthState,
+  createGoogleAuthUrl,
+  createWebSessionFromGoogle,
+  getWebSession,
+  isGoogleAuthConfigured,
+  type WebSession,
+} from '../lib/web-auth';
 import { db } from '../db';
 import { users, messages, telemetryEvents } from '../db/schema';
 import { count, desc } from 'drizzle-orm';
@@ -14,6 +24,70 @@ import { count, desc } from 'drizzle-orm';
 const app = new Hono();
 
 app.use('*', logger());
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function requireWebSession(c: Context) {
+  const session = await getWebSession(c);
+  if (session) {
+    return session;
+  }
+
+  const nextPath = new URL(c.req.url).pathname;
+  c.header('location', `/login?next=${encodeURIComponent(nextPath)}`);
+  c.status(302);
+  return null;
+}
+
+async function requireApiSession(c: Context) {
+  const session = await getWebSession(c);
+  if (!session) {
+    c.status(401);
+    return null;
+  }
+
+  return session;
+}
+
+async function requireAdminPageSession(c: Context) {
+  const session = await requireWebSession(c);
+  if (!session) {
+    return null;
+  }
+
+  if (session.role !== 'admin') {
+    c.header('location', '/chat');
+    c.status(302);
+    return null;
+  }
+
+  return session;
+}
+
+async function requireAdminApiAccess(c: Context) {
+  const token = c.req.query('token') || c.req.header('x-admin-token');
+  if (isValidAdminToken(token)) {
+    return { ok: true as const, via: 'token' as const, session: null };
+  }
+
+  const session = await getWebSession(c);
+  if (!session) {
+    return { ok: false as const, status: 401 as const };
+  }
+
+  if (session.role !== 'admin') {
+    return { ok: false as const, status: 403 as const };
+  }
+
+  return { ok: true as const, via: 'session' as const, session };
+}
 
 function parseTelemetryPayload(payload: string | null) {
   if (!payload) {
@@ -176,7 +250,138 @@ async function getTopUsers(limit = 10) {
     }));
 }
 
-function renderAdminPage() {
+function renderLoginPage(options: {
+  nextPath?: string;
+  error?: string;
+  configured: boolean;
+}) {
+  const nextPath = options.nextPath?.startsWith('/') ? options.nextPath : '/chat';
+  const loginUrl = `/auth/google?next=${encodeURIComponent(nextPath)}`;
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Login | CybraFeriBot</title>
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+      <style>
+        :root {
+          --bg: #07111b;
+          --panel: rgba(13, 25, 39, 0.88);
+          --line: rgba(255,255,255,0.08);
+          --text: #f8fafc;
+          --muted: rgba(226,232,240,0.7);
+          --accent: #2563eb;
+          --accent-2: #0f172a;
+          --danger: #fca5a5;
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          min-height: 100vh;
+          display: grid;
+          place-items: center;
+          padding: 24px;
+          font-family: 'Outfit', sans-serif;
+          color: var(--text);
+          background:
+            radial-gradient(circle at top left, rgba(37,99,235,0.2), transparent 34%),
+            radial-gradient(circle at bottom right, rgba(14,165,233,0.16), transparent 30%),
+            var(--bg);
+        }
+        .panel {
+          width: min(100%, 420px);
+          padding: 28px;
+          border: 1px solid var(--line);
+          border-radius: 20px;
+          background: var(--panel);
+          box-shadow: 0 28px 60px rgba(0, 0, 0, 0.32);
+        }
+        .eyebrow {
+          font-size: 12px;
+          letter-spacing: 0.16em;
+          color: #93c5fd;
+          text-transform: uppercase;
+          font-weight: 700;
+        }
+        h1 {
+          margin: 10px 0 8px;
+          font-size: 34px;
+          line-height: 1.05;
+        }
+        p {
+          margin: 0;
+          color: var(--muted);
+          line-height: 1.6;
+          font-size: 14px;
+        }
+        .status {
+          margin-top: 18px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          border: 1px solid rgba(252,165,165,0.22);
+          background: rgba(127,29,29,0.18);
+          color: var(--danger);
+          font-size: 13px;
+        }
+        .actions {
+          margin-top: 24px;
+          display: grid;
+          gap: 12px;
+        }
+        .google-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          width: 100%;
+          min-height: 48px;
+          padding: 0 16px;
+          border: 0;
+          border-radius: 14px;
+          background: linear-gradient(145deg, #2563eb, #1d4ed8);
+          color: white;
+          font: inherit;
+          font-weight: 600;
+          text-decoration: none;
+        }
+        .google-button[aria-disabled="true"] {
+          opacity: 0.5;
+          pointer-events: none;
+        }
+        .footer {
+          margin-top: 18px;
+          color: rgba(226,232,240,0.5);
+          font-size: 12px;
+        }
+      </style>
+    </head>
+    <body>
+      <main class="panel">
+        <div class="eyebrow">CybraFeriBot</div>
+        <h1>Masuk dengan Google</h1>
+        <p>
+          Akses web chat tersedia untuk semua akun Google yang valid.
+          Akun admin <strong>${escapeHtml('the.real.ferilee@gmail.com')}</strong> akan otomatis mendapat akses dashboard dan admin.
+        </p>
+        ${options.error ? `<div class="status">${escapeHtml(options.error)}</div>` : ''}
+        ${!options.configured ? '<div class="status">Google OAuth belum dikonfigurasi. Isi GOOGLE_CLIENT_ID dan GOOGLE_CLIENT_SECRET terlebih dahulu.</div>' : ''}
+        <div class="actions">
+          <a class="google-button" href="${escapeHtml(loginUrl)}" aria-disabled="${options.configured ? 'false' : 'true'}">
+            <span>Google</span>
+            <span>Lanjutkan ke aplikasi</span>
+          </a>
+        </div>
+        <div class="footer">Setelah login, visitor hanya bisa membuka web chat. Admin bisa membuka chat, dashboard, dan admin.</div>
+      </main>
+    </body>
+    </html>
+  `;
+}
+
+function renderAdminPage(session: WebSession) {
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -314,13 +519,17 @@ function renderAdminPage() {
             <div>
               <div style="letter-spacing: 4px; color: #818cf8; font-size: 0.85rem; font-weight: 600;">ADMIN CONSOLE</div>
               <h1>CybraFeriBot Runtime Control</h1>
-              <p class="hint">Panel ini memakai endpoint admin yang sudah ada. Token tidak disimpan di server; hanya dipakai di browser untuk memanggil API.</p>
+              <p class="hint">Masuk sebagai ${escapeHtml(session.email)}. Session admin Google bisa langsung memakai endpoint admin, dan token manual tetap didukung untuk fallback.</p>
             </div>
-            <div><a href="/">Kembali ke dashboard</a></div>
+            <div class="row">
+              <a href="/dashboard">Dashboard</a>
+              <a href="/chat">Web chat</a>
+              <a href="/logout">Logout</a>
+            </div>
           </div>
           <label>
-            Admin token
-            <input id="adminToken" type="password" placeholder="Masukkan ADMIN_TOKEN" />
+            Admin token opsional
+            <input id="adminToken" type="password" placeholder="Kosongkan jika memakai session admin Google" />
           </label>
           <div class="toolbar">
             <button id="loadAllButton" type="button">Load Current State</button>
@@ -365,6 +574,35 @@ function renderAdminPage() {
               Improvement
               <textarea id="selfDescribeImprovement" placeholder="Penjelasan arah peningkatan kemampuan bot"></textarea>
             </label>
+          </div>
+
+          <div class="panel">
+            <h2>Response Templates</h2>
+            <p class="hint">Perubahan langsung berlaku tanpa rebuild. HTML Telegram sederhana seperti &lt;b&gt;...&lt;/b&gt; boleh dipakai.</p>
+            <label>
+              Status pembuatan Markdown
+              <textarea id="responseMarkdownProcessing" placeholder="Pesan ketika file Markdown sedang dibuat"></textarea>
+            </label>
+            <label>
+              Status pemrosesan dokumen
+              <textarea id="responseDocumentProcessing" placeholder="Gunakan {{fileName}} untuk nama file"></textarea>
+            </label>
+            <label>
+              Error AI
+              <textarea id="responseAiError" placeholder="Pesan ketika provider AI gagal"></textarea>
+            </label>
+            <label>
+              Error dokumen
+              <textarea id="responseDocumentError" placeholder="Pesan ketika file gagal diproses"></textarea>
+            </label>
+            <label>
+              Error ekspor
+              <textarea id="responseExportError" placeholder="Pesan ketika file gagal dibuat"></textarea>
+            </label>
+            <div class="toolbar">
+              <button id="saveResponsesButton" type="button">Save Response Templates</button>
+            </div>
+            <div id="responseStatus" class="status"></div>
           </div>
 
           <div class="panel">
@@ -448,6 +686,7 @@ function renderAdminPage() {
         const tokenInput = document.getElementById('adminToken');
         const globalStatus = document.getElementById('globalStatus');
         const configStatus = document.getElementById('configStatus');
+        const responseStatus = document.getElementById('responseStatus');
         const knowledgeStatus = document.getElementById('knowledgeStatus');
         const preferencesStatus = document.getElementById('preferencesStatus');
         const quotaStatus = document.getElementById('quotaStatus');
@@ -464,17 +703,12 @@ function renderAdminPage() {
           target.textContent = message;
         }
 
-        function requireToken() {
+        function adminUrl(path) {
           const token = tokenInput.value.trim();
           if (!token) {
-            throw new Error('ADMIN_TOKEN wajib diisi.');
+            return path;
           }
-          return token;
-        }
-
-        function adminUrl(path) {
-          const token = encodeURIComponent(requireToken());
-          return path + (path.includes('?') ? '&' : '?') + 'token=' + token;
+          return path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
         }
 
         function escapeHtml(value) {
@@ -506,6 +740,11 @@ function renderAdminPage() {
           document.getElementById('selfDescribeFeatures').value = data.selfDescribe?.features || '';
           document.getElementById('selfDescribeWorkflow').value = data.selfDescribe?.workflow || '';
           document.getElementById('selfDescribeImprovement').value = data.selfDescribe?.improvement || '';
+          document.getElementById('responseMarkdownProcessing').value = data.responseTemplates?.markdownProcessing || '';
+          document.getElementById('responseDocumentProcessing').value = data.responseTemplates?.documentProcessing || '';
+          document.getElementById('responseAiError').value = data.responseTemplates?.aiError || '';
+          document.getElementById('responseDocumentError').value = data.responseTemplates?.documentError || '';
+          document.getElementById('responseExportError').value = data.responseTemplates?.exportError || '';
         }
 
         async function loadKnowledge() {
@@ -638,9 +877,10 @@ function renderAdminPage() {
           }
         });
 
-        document.getElementById('saveConfigButton').addEventListener('click', async () => {
+        async function saveRuntimeConfig() {
           try {
             setStatus(configStatus, 'Menyimpan config...');
+            setStatus(responseStatus, 'Menyimpan response templates...');
             const payload = {
               enabledTools: {
                 math: document.getElementById('toolMath').checked,
@@ -655,6 +895,13 @@ function renderAdminPage() {
                 workflow: document.getElementById('selfDescribeWorkflow').value.trim(),
                 improvement: document.getElementById('selfDescribeImprovement').value.trim(),
               },
+              responseTemplates: {
+                markdownProcessing: document.getElementById('responseMarkdownProcessing').value.trim(),
+                documentProcessing: document.getElementById('responseDocumentProcessing').value.trim(),
+                aiError: document.getElementById('responseAiError').value.trim(),
+                documentError: document.getElementById('responseDocumentError').value.trim(),
+                exportError: document.getElementById('responseExportError').value.trim(),
+              },
             };
             await api('/admin/config', {
               method: 'POST',
@@ -662,10 +909,15 @@ function renderAdminPage() {
               body: JSON.stringify(payload),
             });
             setStatus(configStatus, 'Config runtime berhasil disimpan.', 'ok');
+            setStatus(responseStatus, 'Response templates berhasil disimpan dan langsung aktif.', 'ok');
           } catch (error) {
             setStatus(configStatus, error.message, 'error');
+            setStatus(responseStatus, error.message, 'error');
           }
-        });
+        }
+
+        document.getElementById('saveConfigButton').addEventListener('click', saveRuntimeConfig);
+        document.getElementById('saveResponsesButton').addEventListener('click', saveRuntimeConfig);
 
         document.getElementById('saveKnowledgeButton').addEventListener('click', async () => {
           try {
@@ -726,7 +978,16 @@ function renderAdminPage() {
   `;
 }
 
-function renderWebChatPage() {
+function renderWebChatPage(session: WebSession) {
+  const adminLinks = session.role === 'admin'
+    ? `
+          <div class="sidebar-links">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/admin">Admin</a>
+          </div>
+      `
+    : '';
+
   return `
     <!DOCTYPE html>
     <html lang="id">
@@ -926,6 +1187,51 @@ function renderWebChatPage() {
         }
         .sidebar-links a {
           padding: 9px;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 13px;
+          color: rgba(255,255,255,0.72);
+          text-align: center;
+          text-decoration: none;
+          font-size: 11px;
+        }
+        .account-card {
+          margin-top: 18px;
+          padding: 12px;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 16px;
+          background: rgba(3,19,32,0.22);
+        }
+        .account-role {
+          display: inline-flex;
+          align-items: center;
+          padding: 4px 8px;
+          border-radius: 999px;
+          background: rgba(37,99,235,0.22);
+          color: #dbeafe;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .account-name {
+          margin-top: 10px;
+          font-size: 13px;
+          font-weight: 700;
+        }
+        .account-email {
+          margin-top: 3px;
+          color: rgba(255,255,255,0.6);
+          font-size: 11px;
+          overflow-wrap: anywhere;
+        }
+        .account-actions {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 7px;
+          margin-top: 12px;
+        }
+        .account-actions a {
+          padding: 9px 10px;
           border: 1px solid rgba(255,255,255,0.1);
           border-radius: 13px;
           color: rgba(255,255,255,0.72);
@@ -1337,9 +1643,14 @@ function renderWebChatPage() {
           <div id="skillList" class="skill-list"></div>
           <div class="sidebar-label" style="margin-top: 22px;">Agent Reach</div>
           <div id="reachStatus" class="reach-list"></div>
-          <div class="sidebar-links">
-            <a href="/dashboard">Dashboard</a>
-            <a href="/admin">Admin</a>
+          ${adminLinks}
+          <div class="account-card">
+            <div class="account-role">${escapeHtml(session.role)}</div>
+            <div class="account-name">${escapeHtml(session.name)}</div>
+            <div class="account-email">${escapeHtml(session.email)}</div>
+            <div class="account-actions">
+              <a href="/logout">Logout</a>
+            </div>
           </div>
         </aside>
         <main class="chat glass">
@@ -1661,6 +1972,11 @@ function renderWebChatPage() {
 
 // Operational dashboard
 app.get('/dashboard', async (c) => {
+  const session = await requireAdminPageSession(c);
+  if (!session) {
+    return c.body(null);
+  }
+
   const userCount = await db.select({ value: count() }).from(users);
   const msgCount = await db.select({ value: count() }).from(messages);
   const recentMessages = await db.query.messages.findMany({
@@ -1752,6 +2068,21 @@ app.get('/dashboard', async (c) => {
                 padding: 2rem;
                 box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             }
+            .topbar {
+                width: 90%;
+                max-width: 1000px;
+                margin-top: 1.5rem;
+                display: flex;
+                justify-content: flex-end;
+                gap: 0.8rem;
+                align-items: center;
+                color: rgba(248, 250, 252, 0.7);
+                font-size: 0.9rem;
+            }
+            .topbar a {
+                color: #bfdbfe;
+                text-decoration: none;
+            }
             header {
                 text-align: center;
                 margin-top: 4rem;
@@ -1834,6 +2165,12 @@ app.get('/dashboard', async (c) => {
         </style>
     </head>
     <body>
+        <div class="topbar">
+            <span>${escapeHtml(session.email)} · ${escapeHtml(session.role)}</span>
+            <a href="/chat">Web chat</a>
+            <a href="/admin">Admin</a>
+            <a href="/logout">Logout</a>
+        </div>
         <header>
             <div style="font-size: 0.9rem; letter-spacing: 4px; color: var(--primary); font-weight: 600;">OPERATING SYSTEM V1.0</div>
             <h1>@CybraFeriBot</h1>
@@ -1906,21 +2243,97 @@ app.get('/dashboard', async (c) => {
   `);
 });
 
-app.get('/admin', (c) => c.html(renderAdminPage()));
+app.get('/login', async (c) => {
+  const session = await getWebSession(c);
+  if (session) {
+    return c.redirect(session.role === 'admin' ? '/dashboard' : '/chat');
+  }
 
-app.get('/', (c) => c.html(renderWebChatPage()));
+  return c.html(renderLoginPage({
+    configured: isGoogleAuthConfigured(),
+    nextPath: c.req.query('next') || '/chat',
+    error: c.req.query('error') || undefined,
+  }));
+});
 
-app.get('/chat', (c) => c.html(renderWebChatPage()));
+app.get('/auth/google', (c) => {
+  if (!isGoogleAuthConfigured()) {
+    return c.redirect('/login?error=' + encodeURIComponent('Google OAuth belum dikonfigurasi.'));
+  }
 
-app.get('/api/chat/skills', (c) => {
+  return c.redirect(createGoogleAuthUrl(c, c.req.query('next') || '/chat'));
+});
+
+app.get('/auth/google/callback', async (c) => {
+  const state = consumeOAuthState(c, c.req.query('state'));
+  if (!state) {
+    return c.redirect('/login?error=' + encodeURIComponent('State login Google tidak valid atau kedaluwarsa.'));
+  }
+
+  const code = c.req.query('code');
+  if (!code) {
+    return c.redirect('/login?error=' + encodeURIComponent('Kode login Google tidak ditemukan.'));
+  }
+
+  try {
+    const session = await createWebSessionFromGoogle(c, code);
+    return c.redirect(session.role === 'admin' && state === '/chat' ? '/dashboard' : state);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Login Google gagal.';
+    return c.redirect('/login?error=' + encodeURIComponent(message));
+  }
+});
+
+app.get('/logout', (c) => {
+  clearWebSession(c);
+  return c.redirect('/login');
+});
+
+app.get('/admin', async (c) => {
+  const session = await requireAdminPageSession(c);
+  if (!session) {
+    return c.body(null);
+  }
+  return c.html(renderAdminPage(session));
+});
+
+app.get('/', async (c) => {
+  const session = await getWebSession(c);
+  if (!session) {
+    return c.redirect('/login');
+  }
+  return c.redirect(session.role === 'admin' ? '/dashboard' : '/chat');
+});
+
+app.get('/chat', async (c) => {
+  const session = await requireWebSession(c);
+  if (!session) {
+    return c.body(null);
+  }
+  return c.html(renderWebChatPage(session));
+});
+
+app.get('/api/chat/skills', async (c) => {
+  const session = await requireApiSession(c);
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
   return c.json({ skills: getWebChatSkills() });
 });
 
-app.get('/api/agent-reach/status', (c) => {
+app.get('/api/agent-reach/status', async (c) => {
+  const session = await requireApiSession(c);
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
   return c.json({ channels: getAgentReachStatus() });
 });
 
 app.get('/api/exports/:fileName', async (c) => {
+  const session = await requireApiSession(c);
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
   const fileName = c.req.param('fileName');
   const filePath = getManagedExportFile(fileName);
   if (!filePath) {
@@ -1934,6 +2347,11 @@ app.get('/api/exports/:fileName', async (c) => {
 });
 
 app.post('/api/chat', async (c) => {
+  const session = await requireApiSession(c);
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
   const body = await c.req.json<{
     message?: unknown;
     skillId?: unknown;
@@ -1964,9 +2382,9 @@ app.post('/api/chat', async (c) => {
 });
 
 app.get('/admin/insights', async (c) => {
-  const token = c.req.query('token') || c.req.header('x-admin-token');
-  if (!isValidAdminToken(token)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
   }
 
   const recentTelemetry = await db.query.telemetryEvents.findMany({
@@ -1985,9 +2403,9 @@ app.get('/admin/insights', async (c) => {
 });
 
 app.get('/admin/quota', async (c) => {
-  const token = c.req.query('token') || c.req.header('x-admin-token');
-  if (!isValidAdminToken(token)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
   }
 
   const adminConfig = await getAdminConfig();
@@ -2007,9 +2425,9 @@ app.get('/admin/quota', async (c) => {
 });
 
 app.get('/admin/config', async (c) => {
-  const token = c.req.query('token') || c.req.header('x-admin-token');
-  if (!isValidAdminToken(token)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
   }
 
   const config = await getAdminConfig();
@@ -2017,9 +2435,9 @@ app.get('/admin/config', async (c) => {
 });
 
 app.post('/admin/config', async (c) => {
-  const token = c.req.query('token') || c.req.header('x-admin-token');
-  if (!isValidAdminToken(token)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
   }
 
   let body: Record<string, unknown> = {};
@@ -2031,6 +2449,25 @@ app.post('/admin/config', async (c) => {
 
   const updated = await saveAdminConfig({
     personaOverride: typeof body.personaOverride === 'string' ? body.personaOverride : undefined,
+    responseTemplates: typeof body.responseTemplates === 'object' && body.responseTemplates
+      ? {
+          markdownProcessing: typeof (body.responseTemplates as Record<string, unknown>).markdownProcessing === 'string'
+            ? (body.responseTemplates as Record<string, unknown>).markdownProcessing as string
+            : undefined,
+          documentProcessing: typeof (body.responseTemplates as Record<string, unknown>).documentProcessing === 'string'
+            ? (body.responseTemplates as Record<string, unknown>).documentProcessing as string
+            : undefined,
+          aiError: typeof (body.responseTemplates as Record<string, unknown>).aiError === 'string'
+            ? (body.responseTemplates as Record<string, unknown>).aiError as string
+            : undefined,
+          documentError: typeof (body.responseTemplates as Record<string, unknown>).documentError === 'string'
+            ? (body.responseTemplates as Record<string, unknown>).documentError as string
+            : undefined,
+          exportError: typeof (body.responseTemplates as Record<string, unknown>).exportError === 'string'
+            ? (body.responseTemplates as Record<string, unknown>).exportError as string
+            : undefined,
+        }
+      : undefined,
     selfDescribe: typeof body.selfDescribe === 'object' && body.selfDescribe
       ? {
           identity: typeof (body.selfDescribe as Record<string, unknown>).identity === 'string'
@@ -2061,18 +2498,18 @@ app.post('/admin/config', async (c) => {
 });
 
 app.get('/admin/knowledge', async (c) => {
-  const token = c.req.query('token') || c.req.header('x-admin-token');
-  if (!isValidAdminToken(token)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
   }
 
   return c.json({ items: listKnowledgeDocuments() });
 });
 
 app.post('/admin/knowledge', async (c) => {
-  const token = c.req.query('token') || c.req.header('x-admin-token');
-  if (!isValidAdminToken(token)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
   }
 
   const body = await c.req.json<{ id?: string; title?: string; content?: string }>().catch(() => null);
@@ -2090,9 +2527,9 @@ app.post('/admin/knowledge', async (c) => {
 });
 
 app.delete('/admin/knowledge/:id', async (c) => {
-  const token = c.req.query('token') || c.req.header('x-admin-token');
-  if (!isValidAdminToken(token)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
   }
 
   deleteKnowledgeDocument(c.req.param('id'));
@@ -2100,9 +2537,9 @@ app.delete('/admin/knowledge/:id', async (c) => {
 });
 
 app.post('/admin/preferences/reset', async (c) => {
-  const token = c.req.query('token') || c.req.header('x-admin-token');
-  if (!isValidAdminToken(token)) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
   }
 
   const body = await c.req.json<{ userId?: number }>().catch(() => null);

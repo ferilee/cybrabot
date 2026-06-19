@@ -17,6 +17,7 @@ import {
 } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
 import { containsTelegramHtml, escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent } from '../lib/telegram-rich';
+import { renderResponseTemplate } from '../lib/runtime-responses';
 import { getWebSkill, loadWebSkills, selectWebSkill } from '../lib/web-skills';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
 import { detectPdfSourceKind, extractTextFromDocument, isDocxMimeType, isPdfMimeType, isTextDocumentMimeType, isXlsxMimeType } from '../lib/document-source';
@@ -25,6 +26,7 @@ import {
   createDocxDocument,
   createPdfDocument,
   detectDocumentExportRequest,
+  getExportProcessingMessage,
   materializeExportFile,
 } from '../lib/document-export';
 import {
@@ -33,6 +35,7 @@ import {
   resolveManagedExportPath,
 } from '../lib/humanis-export';
 import { buildVisionPrompt } from '../lib/vision-prompts';
+import { createSessionCookieValue, parseSessionCookieValue, resolveWebRole } from '../lib/web-auth';
 import {
   deleteKnowledgeDocument,
   formatKnowledgeContext,
@@ -49,6 +52,19 @@ import { importFresh, resetDatabase, resetKnowledgeDirectory, testArtifactsDir }
 
 const adminHeaders = { 'x-admin-token': 'test-admin-token', 'content-type': 'application/json' };
 const originalFetch = globalThis.fetch;
+
+async function sessionHeaders(email: string, overrides?: Partial<{ name: string; role: 'admin' | 'visitor' }>) {
+  const cookie = await createSessionCookieValue({
+    email,
+    name: overrides?.name || email,
+    role: overrides?.role || resolveWebRole(email),
+    picture: null,
+  });
+
+  return {
+    cookie: `cybra_web_session=${cookie}`,
+  };
+}
 
 beforeEach(() => {
   resetDatabase();
@@ -147,16 +163,37 @@ describe('backend utilities', () => {
       personaOverride: 'pakai bahasa santai',
       enabledTools: { math: false },
       models: { chat: 'tokenrouter:MiniMax-M3' },
+      responseTemplates: {
+        documentProcessing: 'Memproses {{fileName}} sekarang.',
+      },
     });
     expect(updated.enabledTools.math).toBe(false);
     expect(updated.models.chat).toBe('tokenrouter:MiniMax-M3');
     expect(updated.personaOverride).toBe('pakai bahasa santai');
+    expect(updated.responseTemplates.documentProcessing).toBe('Memproses {{fileName}} sekarang.');
+    expect(renderResponseTemplate(updated.responseTemplates.documentProcessing, { fileName: 'materi.pdf' }))
+      .toBe('Memproses materi.pdf sekarang.');
 
     expect(isValidAdminToken('test-admin-token')).toBe(true);
     expect(isValidAdminToken('salah')).toBe(false);
 
     process.env.TOKENROUTER_API_KEY = 'sk-test';
     expect(isOpenAICompatibleConfigured()).toBe(true);
+  });
+
+  test('web auth resolves roles and validates signed sessions', async () => {
+    expect(resolveWebRole('the.real.ferilee@gmail.com')).toBe('admin');
+    expect(resolveWebRole('someone@example.com')).toBe('visitor');
+
+    const cookie = await createSessionCookieValue({
+      email: 'the.real.ferilee@gmail.com',
+      name: 'Feri',
+      role: 'admin',
+      picture: null,
+    });
+    const parsed = await parseSessionCookieValue(cookie);
+    expect(parsed?.email).toBe('the.real.ferilee@gmail.com');
+    expect(parsed?.role).toBe('admin');
   });
 
   test('knowledge CRUD and retrieval work', () => {
@@ -185,6 +222,8 @@ describe('backend utilities', () => {
 
     const mdRequest = detectDocumentExportRequest('Export markdown ringkasan kondisi indonesia');
     expect(mdRequest?.format).toBe('md');
+    expect(getExportProcessingMessage('md')).toBe('Siap kak, skill aktif! Tunggu sebentar yaaa ... sedang kuproses');
+    expect(getExportProcessingMessage('pdf')).toContain('PDF');
 
     const content = '# Laporan\n\n## Isi\n- Poin satu\nParagraf penutup';
     const pdfBuffer = await createPdfDocument('Laporan', content);
@@ -430,41 +469,58 @@ describe('skill and web chat routing', () => {
 });
 
 describe('api endpoints', () => {
-  test('public pages and service endpoints return success', async () => {
+  test('web pages and chat service enforce session roles', async () => {
     const root = await app.request('/');
-    const chat = await app.request('/chat');
-    const dashboard = await app.request('/dashboard');
     const health = await app.request('/health');
-    const skills = await app.request('/api/chat/skills');
-    const reach = await app.request('/api/agent-reach/status');
+    const guestChat = await app.request('/chat');
+    const guestDashboard = await app.request('/dashboard');
+    const guestSkills = await app.request('/api/chat/skills');
 
-    expect(root.status).toBe(200);
-    expect(chat.status).toBe(200);
-    expect(dashboard.status).toBe(200);
+    const visitorAuth = await sessionHeaders('visitor@example.com');
+    const adminAuth = await sessionHeaders('the.real.ferilee@gmail.com');
+
+    const visitorChat = await app.request('/chat', { headers: visitorAuth });
+    const visitorDashboard = await app.request('/dashboard', { headers: visitorAuth });
+    const adminDashboard = await app.request('/dashboard', { headers: adminAuth });
+    const visitorSkills = await app.request('/api/chat/skills', { headers: visitorAuth });
+    const visitorReach = await app.request('/api/agent-reach/status', { headers: visitorAuth });
+
+    expect(root.status).toBe(302);
+    expect(root.headers.get('location')).toBe('/login');
+    expect(guestChat.status).toBe(302);
+    expect(guestDashboard.status).toBe(302);
+    expect(guestSkills.status).toBe(401);
     expect((await health.json() as { status: string }).status).toBe('ok');
-    expect((await skills.json() as { skills: Array<{ id: string }> }).skills.map((item) => item.id)).toContain('grill-me');
-    expect((await reach.json() as { channels: Array<{ id: string }> }).channels.map((item) => item.id)).toContain('search');
+    expect(visitorChat.status).toBe(200);
+    expect(visitorDashboard.status).toBe(302);
+    expect(visitorDashboard.headers.get('location')).toBe('/chat');
+    expect(adminDashboard.status).toBe(200);
+    expect((await visitorSkills.json() as { skills: Array<{ id: string }> }).skills.map((item) => item.id)).toContain('grill-me');
+    expect((await visitorReach.json() as { channels: Array<{ id: string }> }).channels.map((item) => item.id)).toContain('search');
   });
 
   test('managed export endpoint serves markdown files', async () => {
     const exported = await materializeHumanisMarkdown('Penjelasan MCP', '# Halo\n\nIsi file');
-    const response = await app.request(`/api/exports/${encodeURIComponent(exported.fileName)}`);
+    const response = await app.request(`/api/exports/${encodeURIComponent(exported.fileName)}`, {
+      headers: await sessionHeaders('visitor@example.com'),
+    });
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/markdown');
     expect(await response.text()).toContain('# Halo');
   });
 
   test('api chat validates body and serves tool responses', async () => {
+    const visitorAuth = await sessionHeaders('visitor@example.com');
     const invalid = await app.request('/api/chat', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...visitorAuth },
       body: JSON.stringify({ nope: true }),
     });
     expect(invalid.status).toBe(400);
 
     const valid = await app.request('/api/chat', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...visitorAuth },
       body: JSON.stringify({ message: 'hitung 5 + 7' }),
     });
     const json = await valid.json() as { route: string; model: string; reply: string; intent?: string };
@@ -489,6 +545,12 @@ describe('api endpoints', () => {
 
     const postConfig = await app.request('/admin/config', { method: 'POST', body: '{}' });
     expect(postConfig.status).toBe(401);
+  });
+
+  test('visitor session cannot access admin APIs', async () => {
+    const visitorAuth = await sessionHeaders('visitor@example.com');
+    const response = await app.request('/admin/config', { headers: visitorAuth });
+    expect(response.status).toBe(403);
   });
 
   test('admin config endpoints read and update runtime config', async () => {
