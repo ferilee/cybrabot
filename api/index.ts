@@ -1851,28 +1851,6 @@ function renderWebChatPage(session: WebSession) {
             .replace(/'/g, '&#39;');
         }
 
-        function stashMathExpressions(text) {
-          const placeholders = [];
-          let nextText = String(text || '');
-
-          const stash = (raw) => {
-            const key = 'CYBRA_MATH_' + placeholders.length + '_TOKEN';
-            placeholders.push({ key, raw });
-            return key;
-          };
-
-          nextText = nextText.replace(/\\\[([\s\S]+?)\\\]/g, (match) => stash(match));
-          nextText = nextText.replace(/\\\(([\s\S]+?)\\\)/g, (match) => stash(match));
-          nextText = nextText.replace(/\$\$([\s\S]+?)\$\$/g, (match) => stash(match));
-          nextText = nextText.replace(/(^|[^\\])\$([^\n$]+?)\$/g, (match, prefix, expr) => prefix + stash('$' + expr + '$'));
-
-          return { text: nextText, placeholders };
-        }
-
-        function restoreMathExpressions(text, placeholders) {
-          return placeholders.reduce((acc, item) => acc.replaceAll(item.key, item.raw), text);
-        }
-
         function renderRichContent(text) {
           const source = String(text || '');
           const markdown = window.marked;
@@ -1882,7 +1860,10 @@ function renderWebChatPage(session: WebSession) {
             return '<p>' + escapeHtml(source) + '</p>';
           }
 
-          const stashed = stashMathExpressions(source.replace(/\r\n/g, '\n'));
+          const normalized = source.replaceAll(
+            String.fromCharCode(13) + String.fromCharCode(10),
+            String.fromCharCode(10),
+          );
           markdown.setOptions({
             gfm: true,
             breaks: true,
@@ -1890,12 +1871,12 @@ function renderWebChatPage(session: WebSession) {
             mangle: false,
           });
 
-          const parsed = markdown.parse(stashed.text);
+          const parsed = markdown.parse(normalized);
           const sanitized = purifier.sanitize(parsed, {
             USE_PROFILES: { html: true },
           });
 
-          return restoreMathExpressions(String(sanitized || ''), stashed.placeholders);
+          return String(sanitized || '');
         }
 
         function renderMath(container) {
