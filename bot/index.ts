@@ -455,6 +455,21 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
     intent: 'document_answer',
   });
 
+  const exported = await exportGeneratedContent(ctx, {
+    requestText: question,
+    title: session.title,
+    content: convertRichTelegramToExportText(answer.text),
+    source: 'document_answer',
+    model: answer.model,
+    latencyMs: answer.latencyMs,
+    fallback: answer.fallback,
+    startedAt,
+  });
+
+  if (exported) {
+    return true;
+  }
+
   await logEvent('message.completed', {
     userId,
     route: 'document_qa',
@@ -532,6 +547,23 @@ function describeModelProvider(model: string) {
 
 function stripHtmlMarkup(text: string) {
   return text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function convertRichTelegramToExportText(text: string) {
+  return text
+    .replace(/<pre><code>/gi, '```\n')
+    .replace(/<\/code><\/pre>/gi, '\n```')
+    .replace(/<blockquote>/gi, '\n> ')
+    .replace(/<\/blockquote>/gi, '\n')
+    .replace(/<li>/gi, '- ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/?(ul|ol)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<a [^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '$2 ($1)')
+    .replace(/<\/?(b|strong|i|em|code|s)>/gi, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 async function getLatestBotMessage(userId: number) {
@@ -655,6 +687,73 @@ async function sendActiveDocumentFile(ctx: any, startedAt = Date.now()) {
   }
 }
 
+async function exportGeneratedContent(ctx: any, input: {
+  requestText: string;
+  title: string;
+  content: string;
+  source: string;
+  model?: string;
+  latencyMs?: number;
+  fallback?: boolean;
+  startedAt: number;
+}) {
+  const exportRequest = detectDocumentExportRequest(input.requestText);
+  if (!exportRequest) {
+    return false;
+  }
+
+  const userId = ctx.from.id;
+  let outputPath = '';
+
+  try {
+    const exported = await materializeExportFile(
+      input.title || exportRequest.title,
+      input.content,
+      exportRequest.format,
+    );
+    outputPath = exported.outputPath;
+
+    await ctx.replyWithDocument(exported.inputFile, {
+      caption:
+        `Berikut file <b>${exportRequest.format.toUpperCase()}</b> yang saya buat dari hasil terbaru.\n` +
+        `<b>Judul:</b> ${input.title || exportRequest.title}`,
+      parse_mode: 'HTML',
+    });
+
+    await logEvent('document.exported', {
+      userId,
+      format: exportRequest.format,
+      title: input.title || exportRequest.title,
+      model: input.model || 'unknown',
+      latencyMs: input.latencyMs || 0,
+      fallback: Boolean(input.fallback),
+      source: input.source,
+    });
+
+    await logEvent('message.completed', {
+      userId,
+      route: `${input.source}_export_${exportRequest.format}`,
+      durationMs: Date.now() - input.startedAt,
+    });
+
+    return true;
+  } catch (error) {
+    await logEvent('message.failed', {
+      userId,
+      chatId: ctx.chat.id,
+      feature: 'generated_content_export',
+      error: String(error),
+      durationMs: Date.now() - input.startedAt,
+    }, 'error');
+    await replySafely(ctx, 'Jawabannya sudah jadi, tapi file ekspornya belum berhasil saya buat.');
+    return true;
+  } finally {
+    if (outputPath) {
+      cleanupExportFile(outputPath);
+    }
+  }
+}
+
 async function processIncomingDocument(ctx: any, input: {
   fileId: string;
   fileName: string;
@@ -727,6 +826,21 @@ async function processIncomingDocument(ctx: any, input: {
       role: 'bot',
       intent: 'document_summary',
     });
+
+    const exported = await exportGeneratedContent(ctx, {
+      requestText: input.prompt || '',
+      title: input.fileName,
+      content: convertRichTelegramToExportText(summary.summary),
+      source: 'document_summary',
+      model: summary.model,
+      latencyMs: summary.latencyMs,
+      fallback: false,
+      startedAt,
+    });
+
+    if (exported) {
+      return;
+    }
 
     await logEvent('message.completed', {
       userId,

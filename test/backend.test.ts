@@ -19,7 +19,7 @@ import { runLocalTool } from '../lib/tools';
 import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText } from '../lib/telegram-rich';
 import { getWebSkill, loadWebSkills, selectWebSkill } from '../lib/web-skills';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
-import { isDocxMimeType, isTextDocumentMimeType, isXlsxMimeType, extractTextFromDocument } from '../lib/document-source';
+import { detectPdfSourceKind, extractTextFromDocument, isDocxMimeType, isPdfMimeType, isTextDocumentMimeType, isXlsxMimeType } from '../lib/document-source';
 import {
   cleanupExportFile,
   createDocxDocument,
@@ -32,6 +32,7 @@ import {
   materializeHumanisMarkdown,
   resolveManagedExportPath,
 } from '../lib/humanis-export';
+import { buildVisionPrompt } from '../lib/vision-prompts';
 import {
   deleteKnowledgeDocument,
   formatKnowledgeContext,
@@ -42,6 +43,7 @@ import {
   saveKnowledgeDocument,
 } from '../lib/knowledge';
 import { getWebChatSkills, handleWebChat } from '../lib/web-chat';
+import { detectVisionMode } from '../lib/vision-router';
 import { logEvent } from '../lib/observability';
 import { importFresh, resetDatabase, resetKnowledgeDirectory, testArtifactsDir } from './helpers/runtime';
 
@@ -198,10 +200,25 @@ describe('backend utilities', () => {
     expect(existsSync(exported.outputPath)).toBe(true);
   });
 
+  test('vision router and prompts classify image tasks sanely', () => {
+    expect(detectVisionMode('tolong selesaikan soal pada gambar ini')).toBe('solve');
+    expect(detectVisionMode('analisis screenshot error ini')).toBe('screenshot');
+    expect(detectVisionMode('ekstrak teks dari foto ini')).toBe('ocr');
+    expect(detectVisionMode('ringkas isi gambar ini')).toBe('summary');
+    expect(detectVisionMode('apa isi gambar ini?')).toBe('qa');
+
+    expect(buildVisionPrompt('solve', 'selesaikan soal ini')).toContain('selesaikan langkah demi langkah');
+    expect(buildVisionPrompt('screenshot', 'cek error ini')).toContain('screenshot');
+    expect(buildVisionPrompt('ocr', 'ambil teksnya')).toContain('Ekstrak teks');
+    expect(buildVisionPrompt('qa', 'apa isi diagram ini')).toContain('Jawab permintaan pengguna');
+  });
+
   test('document source extracts text from docx and xlsx', async () => {
     const docxPath = join(testArtifactsDir, 'sample.docx');
     const xlsxPath = join(testArtifactsDir, 'sample.xlsx');
+    const pdfPath = join(testArtifactsDir, 'sample.pdf');
     await Bun.write(docxPath, await createDocxDocument('Judul', '# Isi\n\nParagraf uji dokumen.'));
+    await Bun.write(pdfPath, await createPdfDocument('Judul PDF', '# Isi PDF\n\nParagraf pdf yang bisa diekstrak.'));
 
     const workbook = XLSX.utils.book_new();
     const sheet = XLSX.utils.aoa_to_sheet([
@@ -213,14 +230,20 @@ describe('backend utilities', () => {
 
     expect(isDocxMimeType('application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe(true);
     expect(isXlsxMimeType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe(true);
+    expect(isPdfMimeType('application/pdf')).toBe(true);
     expect(isTextDocumentMimeType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe(true);
 
     const docxText = await extractTextFromDocument(docxPath, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     const xlsxText = await extractTextFromDocument(xlsxPath, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const pdfText = await extractTextFromDocument(pdfPath, 'application/pdf');
+    const pdfSource = await detectPdfSourceKind(pdfPath);
 
     expect(docxText).toContain('Paragraf uji dokumen');
     expect(xlsxText).toContain('Nilai');
     expect(xlsxText).toContain('Feri | 95');
+    expect(pdfText).toContain('Judul PDF');
+    expect(pdfSource.sourceKind).toBe('text');
+    expect(pdfSource.extractedText).toContain('Paragraf pdf yang bisa diekstrak');
   });
 
   test('document session stores and clears active document', async () => {

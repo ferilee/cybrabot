@@ -1,10 +1,12 @@
 import 'dotenv/config';
-import { GoogleGenAI, createPartFromBase64, createPartFromUri } from '@google/genai';
+import { GoogleGenAI, createPartFromUri } from '@google/genai';
 import OpenAI from 'openai';
 import { logEvent } from './observability';
 import type { ActiveDocumentSession } from './document-session';
-import { extractTextFromDocument, isTextDocumentMimeType } from './document-source';
+import { detectPdfSourceKind, extractTextFromDocument, isPdfMimeType, isTextDocumentMimeType } from './document-source';
 import { formatTelegramRichText } from './telegram-rich';
+import { detectVisionMode } from './vision-router';
+import { runVisionTaskFromPath } from './vision-provider';
 
 if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
   console.warn('⚠️ GEMINI_API_KEY/GOOGLE_API_KEY is missing! Document AI features will fail until you set it.');
@@ -88,26 +90,6 @@ function buildPromptForDocument(prompt?: string) {
     `3. data/fakta penting\n` +
     `4. kesimpulan atau tindak lanjut\n\n` +
     `Gunakan struktur plain text yang rapi dengan heading "# ", subheading "## ", bullet "- ", dan kutipan "> ".`
-  );
-}
-
-function buildPromptForImageDocument(prompt?: string) {
-  const trimmedPrompt = prompt?.trim();
-
-  if (trimmedPrompt) {
-    return (
-      `Jawab permintaan pengguna berdasarkan isi gambar ini.\n` +
-      `Jika gambar berisi soal matematika, baca semua ekspresi dan kerjakan langkah demi langkah.\n` +
-      `Jika gambar berisi teks, tabel, atau catatan, jelaskan isi yang terlihat dan jawab permintaan pengguna dengan tepat.\n` +
-      `Kalau ada bagian yang tidak terbaca, sebutkan bagian itu dengan jujur.\n\n` +
-      `Permintaan pengguna: ${trimmedPrompt}`
-    );
-  }
-
-  return (
-    `Baca gambar ini dan buat ringkasan dalam bahasa Indonesia.\n` +
-    `Fokus pada teks yang terlihat, data penting, dan kesimpulan yang bisa diambil.\n` +
-    `Jika gambar berisi soal, tampilkan langkah penyelesaian dan jawaban akhirnya.\n`
   );
 }
 
@@ -212,12 +194,6 @@ function resolveVisionModel(modelSpec?: string) {
   return documentModel;
 }
 
-async function createImagePartFromPath(filePath: string, mimeType: string) {
-  const bytes = await Bun.file(filePath).arrayBuffer();
-  const base64 = Buffer.from(bytes).toString('base64');
-  return createPartFromBase64(base64, mimeType);
-}
-
 export async function summarizeDocumentFromPath(
   filePath: string,
   mimeType: string,
@@ -226,6 +202,30 @@ export async function summarizeDocumentFromPath(
   modelOverride?: string,
 ): Promise<DocumentSummaryResult> {
   const startedAt = Date.now();
+
+  if (isPdfMimeType(mimeType)) {
+    const pdfSource = await detectPdfSourceKind(filePath);
+    if (pdfSource.sourceKind === 'text' && pdfSource.extractedText.trim()) {
+      const response = await generateTextWithModelSpec(
+        modelOverride,
+        `Anda adalah @CybraFeriBot, asisten yang membaca PDF tekstual dan menyiapkan jawaban dalam bahasa Indonesia.\n` +
+        `Gunakan struktur plain text yang rapi dengan heading "# ", subjudul "## ", bullet "- ", dan paragraf biasa.\n` +
+        `Kalau ada soal atau tabel, baca dengan teliti lalu jawab sesuai permintaan pengguna.\n` +
+        `Jangan tampilkan reasoning internal.`,
+        buildPromptForTextDocument(pdfSource.extractedText, prompt),
+      );
+
+      return {
+        summary: formatTelegramRichText(response.text?.trim() || 'PDF berhasil dibaca, tetapi hasil ringkasannya kosong.'),
+        model: response.model,
+        latencyMs: Date.now() - startedAt,
+        geminiFileName: '',
+        geminiFileUri: '',
+        sourceKind: 'text',
+        extractedText: pdfSource.extractedText,
+      };
+    }
+  }
 
   if (isTextDocumentMimeType(mimeType)) {
     const extractedText = await extractTextFromDocument(filePath, mimeType);
@@ -257,25 +257,17 @@ export async function summarizeDocumentFromPath(
   }
 
   if (mimeType.startsWith('image/')) {
-    const visionModel = resolveVisionModel(modelOverride);
-    const response = await client.models.generateContent({
-      model: visionModel,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            await createImagePartFromPath(filePath, mimeType),
-            {
-              text: buildPromptForImageDocument(prompt),
-            },
-          ],
-        },
-      ],
+    const result = await runVisionTaskFromPath({
+      filePath,
+      mimeType,
+      prompt,
+      mode: detectVisionMode(prompt),
+      modelOverride: resolveVisionModel(modelOverride),
     });
 
     return {
-      summary: formatTelegramRichText(response.text?.trim() || 'Gambar berhasil diproses, tetapi ringkasan kosong.'),
-      model: visionModel,
+      summary: result.text,
+      model: result.model,
       latencyMs: Date.now() - startedAt,
       geminiFileName: '',
       geminiFileUri: '',
@@ -360,30 +352,17 @@ export async function answerQuestionAboutDocument(
       throw new Error('Dokumen gambar aktif tidak memiliki file lokal');
     }
 
-    const visionModel = resolveVisionModel(modelOverride);
-    const response = await client.models.generateContent({
-      model: visionModel,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            await createImagePartFromPath(session.localFilePath, session.mimeType),
-            {
-              text:
-                `Jawab pertanyaan pengguna berdasarkan gambar ini.\n` +
-                `Jika gambar berisi soal matematika, selesaikan dengan langkah yang benar dan beri jawaban final.\n` +
-                `Jika gambar berisi teks atau tabel, baca isinya dengan teliti dan jawab berdasarkan apa yang terlihat.\n` +
-                `Kalau jawaban tidak terlihat, katakan dengan jujur bahwa informasi itu tidak terbaca di gambar.\n\n` +
-                `Pertanyaan pengguna: ${question}`,
-            },
-          ],
-        },
-      ],
+    const result = await runVisionTaskFromPath({
+      filePath: session.localFilePath,
+      mimeType: session.mimeType,
+      prompt: question,
+      mode: 'qa',
+      modelOverride: resolveVisionModel(modelOverride),
     });
 
     return {
-      text: formatTelegramRichText(response.text?.trim() || 'Saya belum bisa menemukan jawaban yang jelas dari gambar itu.'),
-      model: visionModel,
+      text: result.text || 'Saya belum bisa menemukan jawaban yang jelas dari gambar itu.',
+      model: result.model,
       latencyMs: Date.now() - startedAt,
       fallback: false,
     };

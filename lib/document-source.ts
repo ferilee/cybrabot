@@ -22,11 +22,48 @@ export function isXlsxMimeType(mimeType: string) {
   return mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 }
 
+export function isPdfMimeType(mimeType: string) {
+  return mimeType === 'application/pdf';
+}
+
 export function isTextDocumentMimeType(mimeType: string) {
   return isDocxMimeType(mimeType) || isXlsxMimeType(mimeType);
 }
 
+export async function extractTextFromPdf(filePath: string) {
+  const result = Bun.spawnSync({
+    cmd: ['pdftotext', '-layout', '-nopgbrk', filePath, '-'],
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+
+  if (result.exitCode !== 0) {
+    return '';
+  }
+
+  return trimContent(Buffer.from(result.stdout).toString('utf-8'));
+}
+
+export async function detectPdfSourceKind(filePath: string) {
+  const extractedText = await extractTextFromPdf(filePath);
+  if (extractedText.trim()) {
+    return {
+      sourceKind: 'text' as const,
+      extractedText,
+    };
+  }
+
+  return {
+    sourceKind: 'gemini' as const,
+    extractedText: '',
+  };
+}
+
 export async function extractTextFromDocument(filePath: string, mimeType: string) {
+  if (isPdfMimeType(mimeType)) {
+    return extractTextFromPdf(filePath);
+  }
+
   if (isDocxMimeType(mimeType)) {
     const result = await mammoth.extractRawText({ path: filePath });
     return trimContent(result.value);
