@@ -36,8 +36,76 @@ const GROUP_ALLOWED_USER_ID = Number(process.env.GROUP_ALLOWED_USER_ID || 177517
 const GROUP_ALLOWED_USERNAME = (process.env.GROUP_ALLOWED_USERNAME || 'ferilee').toLowerCase();
 const PROCESSED_UPDATE_TTL_MS = 10 * 60 * 1000;
 const processedUpdateIds = new Map<number, number>();
+const CHAT_ACTION_INTERVAL_MS = 3500;
+
+type ProcessingIndicatorMode = 'text' | 'document' | 'photo' | 'export';
+type TelegramChatAction =
+  | 'typing'
+  | 'upload_photo'
+  | 'upload_document';
+const INDICATOR_STOP_KEY = '__cybraProcessingIndicatorStop';
 
 mkdirSync(DOCUMENT_DOWNLOAD_DIR, { recursive: true });
+
+function getProcessingIndicatorSequence(mode: ProcessingIndicatorMode): TelegramChatAction[] {
+  switch (mode) {
+    case 'document':
+      return ['typing', 'upload_document', 'typing'];
+    case 'photo':
+      return ['typing', 'upload_photo', 'typing'];
+    case 'export':
+      return ['typing', 'upload_document'];
+    case 'text':
+    default:
+      return ['typing'];
+  }
+}
+
+function startProcessingIndicator(ctx: any, mode: ProcessingIndicatorMode) {
+  if (typeof ctx?.[INDICATOR_STOP_KEY] === 'function') {
+    return () => {};
+  }
+
+  const sequence = getProcessingIndicatorSequence(mode);
+  let index = 0;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const tick = async () => {
+    if (stopped || !ctx?.chat?.id) {
+      return;
+    }
+
+    try {
+      const action = sequence[index % sequence.length] || 'typing';
+      index += 1;
+      await ctx.api.sendChatAction(ctx.chat.id, action);
+    } catch {
+      // Ignore indicator failures. The reply path remains the source of truth.
+    } finally {
+      if (!stopped) {
+        timer = setTimeout(() => {
+          void tick();
+        }, CHAT_ACTION_INTERVAL_MS);
+      }
+    }
+  };
+
+  void tick();
+
+  const stop = () => {
+    stopped = true;
+    if (timer) {
+      clearTimeout(timer);
+    }
+    if (ctx?.[INDICATOR_STOP_KEY] === stop) {
+      delete ctx[INDICATOR_STOP_KEY];
+    }
+  };
+
+  ctx[INDICATOR_STOP_KEY] = stop;
+  return stop;
+}
 
 function pruneProcessedUpdates(now = Date.now()) {
   for (const [updateId, seenAt] of processedUpdateIds) {
@@ -414,76 +482,81 @@ function buildTelegramFileUrl(filePath?: string | null) {
 
 async function answerActiveDocumentQuestion(ctx: any, question: string, startedAt = Date.now()) {
   const userId = ctx.from.id;
+  const stopIndicator = startProcessingIndicator(ctx, 'document');
   const session = await getActiveDocumentSession(userId);
   const adminConfig = await getAdminConfig();
 
-  if (!session) {
-    await replySafely(
-      ctx,
-      formatTelegramRichCard({
-        title: 'Dokumen aktif belum ada',
-        subtitle: 'Kirim file dulu untuk memulai sesi.',
-        badge: 'DOC',
-        fields: [
-          { label: 'Status', value: 'Belum ada dokumen aktif' },
-          { label: 'Saran', value: 'Kirim PDF, gambar, DOCX, atau XLSX terlebih dahulu' },
-        ],
-        footer: 'Setelah itu, Anda bisa tanya isi file tersebut dengan natural.',
-      })
-    );
+  try {
+    if (!session) {
+      await replySafely(
+        ctx,
+        formatTelegramRichCard({
+          title: 'Dokumen aktif belum ada',
+          subtitle: 'Kirim file dulu untuk memulai sesi.',
+          badge: 'DOC',
+          fields: [
+            { label: 'Status', value: 'Belum ada dokumen aktif' },
+            { label: 'Saran', value: 'Kirim PDF, gambar, DOCX, atau XLSX terlebih dahulu' },
+          ],
+          footer: 'Setelah itu, Anda bisa tanya isi file tersebut dengan natural.',
+        })
+      );
+      return true;
+    }
+
+    const exportRequest = detectDocumentExportRequest(question);
+    if (exportRequest?.format === 'md') {
+      await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
+    }
+
+    const answer = await answerQuestionAboutDocument(session, question, adminConfig.models.document);
+    await logEvent('document.question_answered', {
+      userId,
+      title: session.title,
+      model: answer.model,
+      latencyMs: answer.latencyMs,
+    });
+    await replySafely(ctx, answer.text);
+
+    await db.insert(messages).values({
+      userId,
+      content: `Pertanyaan dokumen: ${question}`,
+      role: 'user',
+      intent: 'document_question',
+    });
+
+    await db.insert(messages).values({
+      userId,
+      content: answer.text,
+      role: 'bot',
+      intent: 'document_answer',
+    });
+
+    const exported = await exportGeneratedContent(ctx, {
+      requestText: question,
+      title: session.title,
+      content: convertRichTelegramToExportText(answer.text),
+      source: 'document_answer',
+      model: answer.model,
+      latencyMs: answer.latencyMs,
+      fallback: answer.fallback,
+      startedAt,
+    });
+
+    if (exported) {
+      return true;
+    }
+
+    await logEvent('message.completed', {
+      userId,
+      route: 'document_qa',
+      durationMs: Date.now() - startedAt,
+    });
+
     return true;
+  } finally {
+    stopIndicator();
   }
-
-  const exportRequest = detectDocumentExportRequest(question);
-  if (exportRequest?.format === 'md') {
-    await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
-  }
-
-  const answer = await answerQuestionAboutDocument(session, question, adminConfig.models.document);
-  await logEvent('document.question_answered', {
-    userId,
-    title: session.title,
-    model: answer.model,
-    latencyMs: answer.latencyMs,
-  });
-  await replySafely(ctx, answer.text);
-
-  await db.insert(messages).values({
-    userId,
-    content: `Pertanyaan dokumen: ${question}`,
-    role: 'user',
-    intent: 'document_question',
-  });
-
-  await db.insert(messages).values({
-    userId,
-    content: answer.text,
-    role: 'bot',
-    intent: 'document_answer',
-  });
-
-  const exported = await exportGeneratedContent(ctx, {
-    requestText: question,
-    title: session.title,
-    content: convertRichTelegramToExportText(answer.text),
-    source: 'document_answer',
-    model: answer.model,
-    latencyMs: answer.latencyMs,
-    fallback: answer.fallback,
-    startedAt,
-  });
-
-  if (exported) {
-    return true;
-  }
-
-  await logEvent('message.completed', {
-    userId,
-    route: 'document_qa',
-    durationMs: Date.now() - startedAt,
-  });
-
-  return true;
 }
 
 function shouldTreatAsDocumentSendRequest(text: string) {
@@ -770,6 +843,7 @@ async function processIncomingDocument(ctx: any, input: {
 }) {
   const startedAt = Date.now();
   const userId = ctx.from.id;
+  const stopIndicator = startProcessingIndicator(ctx, input.userFacingType === 'image' ? 'photo' : 'document');
   await ensureUserRegistered(ctx.from);
 
   await logEvent('document.received', {
@@ -871,6 +945,7 @@ async function processIncomingDocument(ctx: any, input: {
       await getRuntimeResponse('documentError')
     );
   } finally {
+    stopIndicator();
     // local file is retained for resend support and cleaned up when the session is replaced or cleared
   }
 }
@@ -882,6 +957,7 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
   }
 
   const userId = ctx.from.id;
+  const stopIndicator = startProcessingIndicator(ctx, 'export');
   const history = await getConversationHistory(userId);
   const preferences = await getUserPreferences(userId);
   const adminConfig = await getAdminConfig();
@@ -961,6 +1037,7 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
     );
     return true;
   } finally {
+    stopIndicator();
     if (outputPath) {
       cleanupExportFile(outputPath);
     }
@@ -970,6 +1047,7 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
 async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx', titleOverride?: string) {
   const startedAt = Date.now();
   const userId = ctx.from.id;
+  const stopIndicator = startProcessingIndicator(ctx, 'export');
   const latestBotMessage = await getLatestBotMessage(userId);
 
   if (!latestBotMessage || latestBotMessage.role !== 'bot' || !latestBotMessage.content?.trim()) {
@@ -1021,6 +1099,7 @@ async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx', ti
     }, 'error');
     await replySafely(ctx, await getRuntimeResponse('exportError'));
   } finally {
+    stopIndicator();
     if (outputPath) {
       cleanupExportFile(outputPath);
     }
@@ -1057,87 +1136,92 @@ async function handleExplicitSkillCommand(
   }
 
   const startedAt = Date.now();
-  const rawText = ctx.message?.text || '';
-  const text = rawText.replace(new RegExp(`^/${options.command}(@\\w+)?`, 'i'), '').trim();
+  const stopIndicator = startProcessingIndicator(ctx, 'text');
+  try {
+    const rawText = ctx.message?.text || '';
+    const text = rawText.replace(new RegExp(`^/${options.command}(@\\w+)?`, 'i'), '').trim();
 
-  if (!text) {
-    await replySafely(ctx, options.emptyPrompt);
-    return;
-  }
+    if (!text) {
+      await replySafely(ctx, options.emptyPrompt);
+      return;
+    }
 
-  const userId = ctx.from.id;
-  await ensureUserRegistered(ctx.from);
-  const adminConfig = await getAdminConfig();
-  const history = await getConversationHistory(userId);
-  const intentResult = await getIntent(text, adminConfig);
-  const exportRequest = detectDocumentExportRequest(text);
+    const userId = ctx.from.id;
+    await ensureUserRegistered(ctx.from);
+    const adminConfig = await getAdminConfig();
+    const history = await getConversationHistory(userId);
+    const intentResult = await getIntent(text, adminConfig);
+    const exportRequest = detectDocumentExportRequest(text);
 
-  if (exportRequest?.format === 'md') {
-    await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
-  }
+    if (exportRequest?.format === 'md') {
+      await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
+    }
 
-  await logEvent('message.received', {
-    userId,
-    chatId: ctx.chat.id,
-    messageLength: rawText.length,
-    normalizedLength: text.length,
-    chatType: ctx.chat?.type,
-    route: `command_${options.command}`,
-  });
-
-  await db.insert(messages).values({
-    userId,
-    content: rawText,
-    role: 'user',
-    intent: options.requestedSkillId,
-  });
-
-  const response = await runSkillChat({
-    message: text,
-    history,
-    adminConfig,
-    requestedSkillId: options.requestedSkillId,
-    intentHint: intentResult,
-  });
-
-  await logEvent('message.ai_used', {
-    userId,
-    route: `command_${options.command}`,
-    skillId: response.skill?.id || options.requestedSkillId,
-    intent: response.intent,
-    intentModel: response.intentModel,
-    model: response.model,
-    latencyMs: response.latencyMs,
-    knowledgeMatches: response.knowledgeMatches,
-    fallback: response.fallback,
-    reach: response.reach,
-  });
-
-  const telegramReply = formatTelegramRichText(response.reply);
-  await replySafely(ctx, telegramReply);
-
-  if (response.exportFile) {
-    await ctx.replyWithDocument(new InputFile(response.exportFile.outputPath, response.exportFile.fileName), {
-      caption:
-        `Berikut file markdown hasil penjelasan humanis.\n` +
-        `<b>Skill:</b> ${response.skill?.title || 'Penjelasan Humanis'}\n` +
-        `<b>Format:</b> MD`,
-      parse_mode: 'HTML',
+    await logEvent('message.received', {
+      userId,
+      chatId: ctx.chat.id,
+      messageLength: rawText.length,
+      normalizedLength: text.length,
+      chatType: ctx.chat?.type,
+      route: `command_${options.command}`,
     });
+
+    await db.insert(messages).values({
+      userId,
+      content: rawText,
+      role: 'user',
+      intent: options.requestedSkillId,
+    });
+
+    const response = await runSkillChat({
+      message: text,
+      history,
+      adminConfig,
+      requestedSkillId: options.requestedSkillId,
+      intentHint: intentResult,
+    });
+
+    await logEvent('message.ai_used', {
+      userId,
+      route: `command_${options.command}`,
+      skillId: response.skill?.id || options.requestedSkillId,
+      intent: response.intent,
+      intentModel: response.intentModel,
+      model: response.model,
+      latencyMs: response.latencyMs,
+      knowledgeMatches: response.knowledgeMatches,
+      fallback: response.fallback,
+      reach: response.reach,
+    });
+
+    const telegramReply = formatTelegramRichText(response.reply);
+    await replySafely(ctx, telegramReply);
+
+    if (response.exportFile) {
+      await ctx.replyWithDocument(new InputFile(response.exportFile.outputPath, response.exportFile.fileName), {
+        caption:
+          `Berikut file markdown hasil penjelasan humanis.\n` +
+          `<b>Skill:</b> ${response.skill?.title || 'Penjelasan Humanis'}\n` +
+          `<b>Format:</b> MD`,
+        parse_mode: 'HTML',
+      });
+    }
+
+    await db.insert(messages).values({
+      userId,
+      content: response.reply,
+      role: 'bot',
+      intent: response.skill?.id || options.requestedSkillId,
+    });
+
+    await logEvent('message.completed', {
+      userId,
+      route: `command_${options.command}`,
+      durationMs: Date.now() - startedAt,
+    });
+  } finally {
+    stopIndicator();
   }
-
-  await db.insert(messages).values({
-    userId,
-    content: response.reply,
-    role: 'bot',
-    intent: response.skill?.id || options.requestedSkillId,
-  });
-
-  await logEvent('message.completed', {
-    userId,
-    route: `command_${options.command}`,
-    durationMs: Date.now() - startedAt,
-  });
 }
 
 bot.command('start', async (ctx) => {
@@ -1640,6 +1724,7 @@ bot.on('message:photo', async (ctx) => {
 
 bot.on('message:text', async (ctx) => {
   const startedAt = Date.now();
+  const stopIndicator = startProcessingIndicator(ctx, 'text');
   try {
     if (isFromBotAccount(ctx)) {
       return;
@@ -1814,6 +1899,8 @@ bot.on('message:text', async (ctx) => {
       durationMs: Date.now() - startedAt,
     }, 'error');
     await replySafely(ctx, await getRuntimeResponse('aiError'));
+  } finally {
+    stopIndicator();
   }
 });
 
