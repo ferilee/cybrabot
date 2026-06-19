@@ -804,6 +804,9 @@ function renderAdminPage(session: WebSession) {
           max-height: 420px;
           overflow: auto;
         }
+        .dense-list {
+          max-height: 560px;
+        }
         .item {
           border: 1px solid rgba(255,255,255,0.08);
           border-radius: 14px;
@@ -825,6 +828,100 @@ function renderAdminPage(session: WebSession) {
         .hint {
           color: var(--muted);
           font-size: 0.95rem;
+        }
+        .compact-input {
+          min-width: 220px;
+          flex: 1 1 240px;
+          margin-top: 0;
+        }
+        .user-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+          gap: 0.9rem;
+        }
+        .user-card {
+          display: grid;
+          gap: 0.8rem;
+        }
+        .user-header {
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          gap: 0.8rem;
+          align-items: start;
+        }
+        .user-avatar {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          object-fit: cover;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(255,255,255,0.08);
+        }
+        .user-avatar-fallback {
+          display: grid;
+          place-items: center;
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: white;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: linear-gradient(145deg, rgba(99,102,241,0.9), rgba(168,85,247,0.9));
+        }
+        .badge-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.45rem;
+          margin-top: 0.45rem;
+        }
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.3rem 0.55rem;
+          border-radius: 999px;
+          font-size: 0.74rem;
+          font-weight: 600;
+          border: 1px solid rgba(255,255,255,0.1);
+          color: rgba(248,250,252,0.86);
+          background: rgba(255,255,255,0.05);
+        }
+        .badge.ok {
+          color: #bbf7d0;
+          border-color: rgba(34,197,94,0.22);
+          background: rgba(20,83,45,0.4);
+        }
+        .badge.warn {
+          color: #fde68a;
+          border-color: rgba(245,158,11,0.22);
+          background: rgba(120,53,15,0.35);
+        }
+        .badge.danger {
+          color: #fecaca;
+          border-color: rgba(239,68,68,0.22);
+          background: rgba(127,29,29,0.35);
+        }
+        .mini-stat {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 0.55rem;
+        }
+        .mini-stat > div {
+          padding: 0.6rem 0.7rem;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.06);
+        }
+        .mini-stat strong {
+          display: block;
+          font-size: 0.95rem;
+        }
+        .mini-stat span {
+          display: block;
+          margin-top: 0.18rem;
+          color: var(--muted);
+          font-size: 0.72rem;
         }
         a { color: #a5b4fc; }
       </style>
@@ -963,7 +1060,16 @@ function renderAdminPage(session: WebSession) {
         <div class="panel">
           <h2>Web Users</h2>
           <p class="hint">Kelola user Google web: lihat profil, status akun, kuota aktif, dan reset jatah obrolan.</p>
-          <div id="webUsersList" class="list">
+          <div class="toolbar" style="margin-top:0.8rem;">
+            <input id="webUserSearch" class="compact-input" type="text" placeholder="Cari nama, email, atau wilayah" />
+            <select id="webUserStatusFilter" class="compact-input">
+              <option value="all">Semua status</option>
+              <option value="active">Aktif</option>
+              <option value="suspended">Suspended</option>
+              <option value="incomplete">Profil belum lengkap</option>
+            </select>
+          </div>
+          <div id="webUsersList" class="list dense-list">
             <div class="hint">Belum dimuat.</div>
           </div>
         </div>
@@ -1021,6 +1127,9 @@ function renderAdminPage(session: WebSession) {
         const topUsersList = document.getElementById('topUsersList');
         const failureList = document.getElementById('failureList');
         const webUsersList = document.getElementById('webUsersList');
+        const webUserSearch = document.getElementById('webUserSearch');
+        const webUserStatusFilter = document.getElementById('webUserStatusFilter');
+        let cachedWebUsers = [];
 
         tokenInput.value = params.get('token') || '';
 
@@ -1145,25 +1254,67 @@ function renderAdminPage(session: WebSession) {
 
         async function loadWebUsers() {
           const data = await api('/admin/users');
-          const items = Array.isArray(data.items) ? data.items : [];
+          cachedWebUsers = Array.isArray(data.items) ? data.items : [];
+          renderWebUsers();
+        }
+
+        function renderWebUsers() {
+          const query = String(webUserSearch.value || '').trim().toLowerCase();
+          const filter = String(webUserStatusFilter.value || 'all');
+          const items = cachedWebUsers.filter((item) => {
+            const haystack = [
+              item.fullName,
+              item.googleName,
+              item.email,
+              item.region,
+            ].filter(Boolean).join(' ').toLowerCase();
+
+            if (query && !haystack.includes(query)) {
+              return false;
+            }
+
+            if (filter === 'active' && item.suspended) return false;
+            if (filter === 'suspended' && !item.suspended) return false;
+            if (filter === 'incomplete' && item.profileCompleted) return false;
+            return true;
+          });
+
           webUsersList.innerHTML = items.length
-            ? items.map((item) => \`
-                <div class="item">
-                  <div class="row" style="justify-content: space-between; align-items: flex-start;">
-                    <div>
-                      <strong>\${escapeHtml(item.fullName || item.googleName || item.email)}</strong>
-                      <div class="hint">\${escapeHtml(item.email)}</div>
-                      <div class="hint">\${escapeHtml(item.region || 'Wilayah belum diisi')}</div>
+            ? '<div class="user-grid">' + items.map((item) => {
+                const displayName = item.fullName || item.googleName || item.email;
+                const initials = String(displayName).trim().split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase() || 'U';
+                const avatar = item.picture
+                  ? '<img class="user-avatar" src="' + escapeHtml(item.picture) + '" alt="' + escapeHtml(displayName) + '">'
+                  : '<div class="user-avatar-fallback">' + escapeHtml(initials) + '</div>';
+                const resetText = item.quota?.resetsAt ? new Date(item.quota.resetsAt).toLocaleString('id-ID') : '-';
+                return \`
+                  <div class="item user-card">
+                    <div class="user-header">
+                      \${avatar}
+                      <div style="min-width:0;">
+                        <strong style="display:block;overflow-wrap:anywhere;">\${escapeHtml(displayName)}</strong>
+                        <div class="hint" style="overflow-wrap:anywhere;">\${escapeHtml(item.email)}</div>
+                        <div class="hint" style="margin-top:0.25rem;">\${escapeHtml(item.region || 'Wilayah belum diisi')}</div>
+                        <div class="badge-row">
+                          <span class="badge">\${escapeHtml(item.role || 'visitor')}</span>
+                          <span class="badge \${item.profileCompleted ? 'ok' : 'warn'}">\${item.profileCompleted ? 'profil lengkap' : 'profil belum lengkap'}</span>
+                          <span class="badge \${item.suspended ? 'danger' : 'ok'}">\${item.suspended ? 'suspended' : 'aktif'}</span>
+                        </div>
+                      </div>
+                      <div class="row" style="justify-content:flex-end;">
+                        <button type="button" class="secondary" onclick="toggleWebUserSuspension('\${escapeHtml(item.email)}', \${item.suspended ? 'false' : 'true'})">\${item.suspended ? 'Aktifkan' : 'Suspend'}</button>
+                        <button type="button" onclick="resetWebUserQuota('\${escapeHtml(item.email)}')">Reset Kuota</button>
+                      </div>
                     </div>
-                    <div class="row">
-                      <button type="button" class="secondary" onclick="toggleWebUserSuspension('\${escapeHtml(item.email)}', \${item.suspended ? 'false' : 'true'})">\${item.suspended ? 'Aktifkan' : 'Suspend'}</button>
-                      <button type="button" onclick="resetWebUserQuota('\${escapeHtml(item.email)}')">Reset Kuota</button>
+                    <div class="mini-stat">
+                      <div><strong>\${item.quota?.remaining ?? '-'}/\${item.quota?.limit ?? '-'}</strong><span>Sisa chat</span></div>
+                      <div><strong>\${item.quota?.used ?? '-'}</strong><span>Terpakai</span></div>
+                      <div><strong>\${escapeHtml(resetText)}</strong><span>Reset berikutnya</span></div>
                     </div>
                   </div>
-                  <p>Role: \${escapeHtml(item.role || 'visitor')} | Profil: \${item.profileCompleted ? 'lengkap' : 'belum lengkap'} | Sisa: \${item.quota?.remaining ?? '-'} / \${item.quota?.limit ?? '-'} | Reset: \${escapeHtml(item.quota?.resetsAt || '-')}</p>
-                </div>
-              \`).join('')
-            : '<div class="hint">Belum ada user web.</div>';
+                \`;
+              }).join('') + '</div>'
+            : '<div class="hint">Tidak ada user yang cocok dengan filter saat ini.</div>';
         }
 
         window.toggleWebUserSuspension = async (email, suspended) => {
@@ -1351,6 +1502,9 @@ function renderAdminPage(session: WebSession) {
             setStatus(quotaStatus, error.message, 'error');
           }
         });
+
+        webUserSearch.addEventListener('input', renderWebUsers);
+        webUserStatusFilter.addEventListener('change', renderWebUsers);
       </script>
     </body>
     </html>
@@ -1358,6 +1512,9 @@ function renderAdminPage(session: WebSession) {
 }
 
 function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<ReturnType<typeof getWebUserByEmail>>>, quota: ReturnType<typeof toWebQuotaStatus>) {
+  const displayName = account.fullName || session.name;
+  const avatarUrl = account.picture || session.picture || '';
+  const avatarInitial = (displayName.trim()[0] || 'C').toUpperCase();
   const adminLinks = session.role === 'admin'
     ? `
           <div class="sidebar-links">
@@ -1475,6 +1632,16 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           height: 48px;
           border-radius: 50%;
         }
+        .brand-logo {
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          object-fit: cover;
+          flex: 0 0 auto;
+          border: 1px solid rgba(255,255,255,0.2);
+          box-shadow: 0 10px 26px rgba(5, 19, 31, 0.35);
+          background: rgba(255,255,255,0.06);
+        }
         .brand strong {
           display: block;
           font-size: 16px;
@@ -1537,12 +1704,11 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         .skill-button span {
           display: block;
           margin-top: 3px;
-          overflow: hidden;
           color: rgba(255,255,255,0.5);
           font-size: 11px;
           line-height: 1.35;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
         .reach-list {
           display: flex;
@@ -1615,6 +1781,33 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           grid-template-columns: 1fr;
           gap: 7px;
           margin-top: 12px;
+        }
+        .account-header {
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr);
+          gap: 10px;
+          align-items: center;
+          margin-top: 10px;
+        }
+        .account-photo {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          object-fit: cover;
+          border: 1px solid rgba(255,255,255,0.16);
+          background: rgba(255,255,255,0.08);
+        }
+        .account-photo-fallback {
+          display: grid;
+          place-items: center;
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          font-size: 14px;
+          font-weight: 800;
+          color: white;
+          border: 1px solid rgba(255,255,255,0.16);
+          background: linear-gradient(145deg, rgba(99,102,241,0.9), rgba(34,211,238,0.9));
         }
         .account-actions a {
           padding: 9px 10px;
@@ -1733,6 +1926,16 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           height: 74px;
           margin: 0 auto 16px;
           font-size: 22px;
+        }
+        .welcome-logo {
+          width: 74px;
+          height: 74px;
+          margin: 0 auto 16px;
+          object-fit: cover;
+          border-radius: 50%;
+          border: 2px solid rgba(255,255,255,0.72);
+          box-shadow: 0 10px 26px rgba(5, 19, 31, 0.35);
+          background: rgba(255,255,255,0.08);
         }
         .welcome h2 {
           margin: 0;
@@ -2101,7 +2304,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
       <div class="app-shell">
         <aside id="sidebar" class="sidebar glass">
           <div class="brand">
-            <div class="brand-orb">C</div>
+            <img class="brand-logo" src="/assets/cybrabot-logo.png" alt="CybraFeriBot logo">
             <div>
               <strong>CybraFeriBot</strong>
               <span><i class="online-dot"></i> Online dan siap ngobrol</span>
@@ -2114,9 +2317,17 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           ${adminLinks}
           <div class="account-card">
             <div class="account-role">${escapeHtml(session.role)}</div>
-            <div class="account-name">${escapeHtml(account.fullName || session.name)}</div>
-            <div class="account-email">${escapeHtml(session.email)}</div>
-            <div class="account-email">${escapeHtml([account.villageName, account.districtName, account.regencyName, account.provinceName].filter(Boolean).join(', ') || 'Wilayah belum diisi')}</div>
+            <div class="account-header">
+              ${avatarUrl
+                ? `<img class="account-photo" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(displayName)}">`
+                : `<div class="account-photo-fallback">${escapeHtml(avatarInitial)}</div>`
+              }
+              <div style="min-width:0;">
+                <div class="account-name" style="margin-top:0;">${escapeHtml(displayName)}</div>
+                <div class="account-email">${escapeHtml(session.email)}</div>
+                <div class="account-email">${escapeHtml([account.villageName, account.districtName, account.regencyName, account.provinceName].filter(Boolean).join(', ') || 'Wilayah belum diisi')}</div>
+              </div>
+            </div>
             <div style="margin-top:12px;">
               <div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:rgba(255,255,255,0.7);">
                 <span>Kuota 3 hari</span>
@@ -2148,7 +2359,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           </header>
           <section id="messages" class="messages" aria-live="polite">
             <div id="welcome" class="welcome">
-              <div class="brand-orb">C</div>
+              <img class="welcome-logo" src="/assets/cybrabot-logo.png" alt="CybraFeriBot logo">
               <h2>Mau bikin apa hari ini?</h2>
               <p>Tanya, riset, susun dokumen, atau bedah masalah teknis. Cybra siap membantu tanpa meminta kopi, setidaknya untuk sekarang.</p>
               <div class="suggestions">
@@ -2194,6 +2405,8 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           selectedSkillId: '',
           history: loadStoredHistory(),
         };
+        const userAvatarUrl = ${JSON.stringify(avatarUrl)};
+        const userAvatarInitial = ${JSON.stringify(avatarInitial)};
 
         function formatResetTime(value) {
           if (!value) return '-';
@@ -2326,8 +2539,13 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           const row = document.createElement('article');
           row.className = 'message-row ' + role;
           const avatar = document.createElement('div');
-          avatar.className = 'avatar';
-          avatar.textContent = role === 'user' ? 'U' : 'C';
+          if (role === 'user' && userAvatarUrl) {
+            avatar.className = 'avatar';
+            avatar.innerHTML = '<img src="' + escapeHtml(userAvatarUrl) + '" alt="User avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,0.78);box-shadow:0 10px 26px rgba(5,19,31,0.35);background:rgba(255,255,255,0.08);">';
+          } else {
+            avatar.className = 'avatar';
+            avatar.textContent = role === 'user' ? userAvatarInitial : 'C';
+          }
           const bubble = document.createElement('div');
           bubble.className = 'bubble';
           const time = new Intl.DateTimeFormat('id-ID', {
