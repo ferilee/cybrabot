@@ -12,7 +12,9 @@ mkdirSync(testArtifactsDir, { recursive: true });
 
 export function resetDatabase() {
   const sqlite = new Database(testDbPath, { create: true });
+  sqlite.exec('PRAGMA busy_timeout = 5000;');
   sqlite.exec(`
+    DELETE FROM web_users;
     DELETE FROM document_sessions;
     DELETE FROM telemetry_events;
     DELETE FROM messages;

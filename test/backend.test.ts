@@ -48,6 +48,7 @@ import {
 import { getWebChatSkills, handleWebChat } from '../lib/web-chat';
 import { detectVisionMode } from '../lib/vision-router';
 import { logEvent } from '../lib/observability';
+import { saveWebUserProfile, seedWebUserForTest } from '../lib/web-users';
 import { importFresh, resetDatabase, resetKnowledgeDirectory, testArtifactsDir } from './helpers/runtime';
 
 const adminHeaders = { 'x-admin-token': 'test-admin-token', 'content-type': 'application/json' };
@@ -511,6 +512,43 @@ describe('skill and web chat routing', () => {
 
 describe('api endpoints', () => {
   test('web pages and chat service enforce session roles', async () => {
+    await seedWebUserForTest({
+      email: 'visitor@example.com',
+      profileCompleted: true,
+      fullName: 'Visitor Example',
+      role: 'visitor',
+    });
+    await saveWebUserProfile({
+      email: 'visitor@example.com',
+      fullName: 'Visitor Example',
+      provinceId: '31',
+      provinceName: 'DKI JAKARTA',
+      regencyId: '3171',
+      regencyName: 'KOTA ADM. JAKARTA PUSAT',
+      districtId: '3171010',
+      districtName: 'MENTENG',
+      villageId: '3171010001',
+      villageName: 'MENTENG',
+    });
+    await seedWebUserForTest({
+      email: 'the.real.ferilee@gmail.com',
+      profileCompleted: true,
+      fullName: 'Feri Lee',
+      role: 'admin',
+    });
+    await saveWebUserProfile({
+      email: 'the.real.ferilee@gmail.com',
+      fullName: 'Feri Lee',
+      provinceId: '31',
+      provinceName: 'DKI JAKARTA',
+      regencyId: '3171',
+      regencyName: 'KOTA ADM. JAKARTA PUSAT',
+      districtId: '3171010',
+      districtName: 'MENTENG',
+      villageId: '3171010001',
+      villageName: 'MENTENG',
+    });
+
     const root = await app.request('/');
     const login = await app.request('/login');
     const health = await app.request('/health');
@@ -551,6 +589,19 @@ describe('api endpoints', () => {
   });
 
   test('managed export endpoint serves markdown files', async () => {
+    await seedWebUserForTest({ email: 'visitor@example.com', profileCompleted: true, fullName: 'Visitor Example' });
+    await saveWebUserProfile({
+      email: 'visitor@example.com',
+      fullName: 'Visitor Example',
+      provinceId: '31',
+      provinceName: 'DKI JAKARTA',
+      regencyId: '3171',
+      regencyName: 'KOTA ADM. JAKARTA PUSAT',
+      districtId: '3171010',
+      districtName: 'MENTENG',
+      villageId: '3171010001',
+      villageName: 'MENTENG',
+    });
     const exported = await materializeHumanisMarkdown('Penjelasan MCP', '# Halo\n\nIsi file');
     const response = await app.request(`/api/exports/${encodeURIComponent(exported.fileName)}`, {
       headers: await sessionHeaders('visitor@example.com'),
@@ -571,6 +622,19 @@ describe('api endpoints', () => {
   });
 
   test('api chat validates body and serves tool responses', async () => {
+    await seedWebUserForTest({ email: 'visitor@example.com', profileCompleted: true, fullName: 'Visitor Example' });
+    await saveWebUserProfile({
+      email: 'visitor@example.com',
+      fullName: 'Visitor Example',
+      provinceId: '31',
+      provinceName: 'DKI JAKARTA',
+      regencyId: '3171',
+      regencyName: 'KOTA ADM. JAKARTA PUSAT',
+      districtId: '3171010',
+      districtName: 'MENTENG',
+      villageId: '3171010001',
+      villageName: 'MENTENG',
+    });
     const visitorAuth = await sessionHeaders('visitor@example.com');
     const invalid = await app.request('/api/chat', {
       method: 'POST',
@@ -612,6 +676,99 @@ describe('api endpoints', () => {
     const visitorAuth = await sessionHeaders('visitor@example.com');
     const response = await app.request('/admin/config', { headers: visitorAuth });
     expect(response.status).toBe(403);
+  });
+
+  test('first login must complete profile and web quota is exposed', async () => {
+    await seedWebUserForTest({
+      email: 'baru@example.com',
+      role: 'visitor',
+      googleName: 'User Baru',
+      profileCompleted: false,
+    });
+
+    const auth = await sessionHeaders('baru@example.com');
+    const chat = await app.request('/chat', { headers: auth });
+    expect(chat.status).toBe(302);
+    expect(chat.headers.get('location')).toBe('/profile/setup');
+
+    const profilePage = await app.request('/profile/setup', { headers: auth });
+    expect(profilePage.status).toBe(200);
+    expect(await profilePage.text()).toContain('Lengkapi profil dulu');
+
+    const saveProfile = await app.request('/api/profile/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...auth },
+      body: JSON.stringify({
+        fullName: 'User Baru',
+        provinceId: '31',
+        provinceName: 'DKI JAKARTA',
+        regencyId: '3171',
+        regencyName: 'KOTA ADM. JAKARTA PUSAT',
+        districtId: '3171010',
+        districtName: 'MENTENG',
+        villageId: '3171010001',
+        villageName: 'MENTENG',
+      }),
+    });
+    expect(saveProfile.status).toBe(200);
+
+    const me = await app.request('/api/me', { headers: auth });
+    const meJson = await me.json() as { quota: { limit: number; remaining: number } };
+    expect(me.status).toBe(200);
+    expect(meJson.quota.limit).toBe(5);
+    expect(meJson.quota.remaining).toBe(5);
+  });
+
+  test('web chat quota blocks after five messages and admin can manage web users', async () => {
+    await seedWebUserForTest({ email: 'limited@example.com', profileCompleted: true, fullName: 'Limited User' });
+    await saveWebUserProfile({
+      email: 'limited@example.com',
+      fullName: 'Limited User',
+      provinceId: '31',
+      provinceName: 'DKI JAKARTA',
+      regencyId: '3171',
+      regencyName: 'KOTA ADM. JAKARTA PUSAT',
+      districtId: '3171010',
+      districtName: 'MENTENG',
+      villageId: '3171010001',
+      villageName: 'MENTENG',
+    });
+
+    const limitedAuth = await sessionHeaders('limited@example.com');
+    for (let index = 0; index < 5; index += 1) {
+      const response = await app.request('/api/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...limitedAuth },
+        body: JSON.stringify({ message: `hitung 1 + ${index}` }),
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const blocked = await app.request('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...limitedAuth },
+      body: JSON.stringify({ message: 'hitung 9 + 9' }),
+    });
+    expect(blocked.status).toBe(429);
+    expect((await blocked.json() as { quota: { remaining: number } }).quota.remaining).toBe(0);
+
+    const listed = await app.request('/admin/users', { headers: adminHeaders });
+    expect(listed.status).toBe(200);
+    expect((await listed.json() as { items: Array<{ email: string }> }).items.map((item) => item.email)).toContain('limited@example.com');
+
+    const reset = await app.request('/admin/users/limited%40example.com', {
+      method: 'PATCH',
+      headers: adminHeaders,
+      body: JSON.stringify({ resetQuota: true, suspended: true }),
+    });
+    expect(reset.status).toBe(200);
+
+    const suspended = await app.request('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...limitedAuth },
+      body: JSON.stringify({ message: 'hitung 2 + 2' }),
+    });
+    expect(suspended.status).toBe(403);
   });
 
   test('admin config endpoints read and update runtime config', async () => {

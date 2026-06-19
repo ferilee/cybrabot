@@ -19,8 +19,21 @@ import {
   type WebSession,
 } from '../lib/web-auth';
 import { db } from '../db';
-import { users, messages, telemetryEvents } from '../db/schema';
-import { count, desc } from 'drizzle-orm';
+import { users, messages, telemetryEvents, webUsers } from '../db/schema';
+import { count, desc, eq } from 'drizzle-orm';
+import {
+  consumeWebChatQuota,
+  getWebQuotaStatus,
+  getWebUserByEmail,
+  isWebProfileComplete,
+  listManagedWebUsers,
+  saveWebUserProfile,
+  syncWebUserAccount,
+  toWebQuotaStatus,
+  updateManagedWebUser,
+  WEB_CHAT_QUOTA_LIMIT,
+  WEB_CHAT_QUOTA_WINDOW_DAYS,
+} from '../lib/web-users';
 
 const app = new Hono();
 
@@ -55,6 +68,58 @@ async function requireApiSession(c: Context) {
   }
 
   return session;
+}
+
+async function getCurrentWebAccount(session: WebSession | null) {
+  if (!session) {
+    return null;
+  }
+
+  return getWebUserByEmail(session.email);
+}
+
+async function requireCompleteWebAccount(c: Context, session: WebSession | null, asApi = false) {
+  if (!session) {
+    if (asApi) {
+      c.status(401);
+      return null;
+    }
+    const nextPath = new URL(c.req.url).pathname;
+    c.header('location', `/login?next=${encodeURIComponent(nextPath)}`);
+    c.status(302);
+    return null;
+  }
+
+  const account = await getCurrentWebAccount(session);
+  if (!account) {
+    if (asApi) {
+      return c.json({ error: 'Web account not found' }, 404);
+    }
+    c.header('location', `/profile/setup`);
+    c.status(302);
+    return null;
+  }
+
+  if (account.suspended) {
+    if (asApi) {
+      return c.json({ error: 'Account suspended' }, 403);
+    }
+    clearWebSession(c);
+    c.header('location', `/login?error=${encodeURIComponent('Akun dinonaktifkan admin.')}`);
+    c.status(302);
+    return null;
+  }
+
+  if (!isWebProfileComplete(account)) {
+    if (asApi) {
+      return c.json({ error: 'Profile incomplete' }, 428);
+    }
+    c.header('location', `/profile/setup`);
+    c.status(302);
+    return null;
+  }
+
+  return account;
 }
 
 async function requireAdminPageSession(c: Context) {
@@ -106,6 +171,7 @@ function getAssetPath(fileName: string) {
   const assetsDir = join(import.meta.dir, '..', 'assets');
   const allowedAssets = new Map([
     ['cybrabot-logo.png', join(assetsDir, 'cybrabot-logo.png')],
+    ['cybrabot-logo.webp', join(assetsDir, 'cybrabot-logo.webp')],
     ['favicon.png', join(assetsDir, 'favicon.png')],
     ['favicon.ico', join(assetsDir, 'favicon.ico')],
   ]);
@@ -115,6 +181,7 @@ function getAssetPath(fileName: string) {
 
 function getAssetContentType(fileName: string) {
   if (fileName.endsWith('.png')) return 'image/png';
+  if (fileName.endsWith('.webp')) return 'image/webp';
   if (fileName.endsWith('.ico')) return 'image/x-icon';
   return 'application/octet-stream';
 }
@@ -406,6 +473,229 @@ function renderLoginPage(options: {
   `;
 }
 
+function renderProfileSetupPage(session: WebSession, options?: { error?: string }) {
+  return `
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Lengkapi Profil | CybraFeriBot</title>
+      <link rel="icon" type="image/png" href="/assets/favicon.png">
+      <link rel="icon" type="image/x-icon" href="/favicon.ico">
+      <link rel="apple-touch-icon" href="/assets/favicon.png">
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+      <style>
+        :root {
+          --bg: #07111b;
+          --panel: rgba(13, 25, 39, 0.92);
+          --line: rgba(255,255,255,0.08);
+          --text: #f8fafc;
+          --muted: rgba(226,232,240,0.7);
+          --accent: #2563eb;
+          --danger: #fca5a5;
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          min-height: 100vh;
+          padding: 24px;
+          display: grid;
+          place-items: center;
+          font-family: 'Outfit', sans-serif;
+          color: var(--text);
+          background:
+            radial-gradient(circle at top left, rgba(37,99,235,0.2), transparent 34%),
+            radial-gradient(circle at bottom right, rgba(14,165,233,0.16), transparent 30%),
+            var(--bg);
+        }
+        .panel {
+          width: min(100%, 720px);
+          padding: 28px;
+          border: 1px solid var(--line);
+          border-radius: 24px;
+          background: var(--panel);
+          box-shadow: 0 28px 60px rgba(0, 0, 0, 0.32);
+        }
+        h1 { margin: 10px 0 8px; font-size: 34px; line-height: 1.05; }
+        p { margin: 0; color: var(--muted); line-height: 1.6; font-size: 14px; }
+        .eyebrow { font-size: 12px; letter-spacing: 0.16em; color: #93c5fd; text-transform: uppercase; font-weight: 700; }
+        .hero-logo { display: block; width: 140px; height: auto; margin: 16px auto 18px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; }
+        .full { grid-column: 1 / -1; }
+        label { display: block; color: var(--muted); font-size: 13px; }
+        input, select, button {
+          width: 100%;
+          font: inherit;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,0.1);
+        }
+        input, select {
+          margin-top: 8px;
+          padding: 12px 14px;
+          color: var(--text);
+          background: rgba(7,17,27,0.76);
+        }
+        button {
+          margin-top: 22px;
+          min-height: 50px;
+          border: 0;
+          color: white;
+          font-weight: 700;
+          background: linear-gradient(145deg, #2563eb, #1d4ed8);
+          cursor: pointer;
+        }
+        button:disabled { opacity: 0.55; cursor: progress; }
+        .status {
+          margin-top: 18px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          border: 1px solid rgba(252,165,165,0.22);
+          background: rgba(127,29,29,0.18);
+          color: var(--danger);
+          font-size: 13px;
+        }
+        .mini {
+          margin-top: 16px;
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          color: rgba(226,232,240,0.56);
+          font-size: 12px;
+        }
+        @media (max-width: 680px) {
+          .grid { grid-template-columns: 1fr; }
+          .full { grid-column: auto; }
+        }
+      </style>
+    </head>
+    <body>
+      <main class="panel">
+        <div class="eyebrow">Profil Pertama</div>
+        <h1>Lengkapi profil dulu</h1>
+        <img class="hero-logo" src="/assets/cybrabot-logo.png" alt="CybraFeriBot logo">
+        <p>Akun <strong>${escapeHtml(session.email)}</strong> perlu melengkapi profil sebelum memakai aplikasi. Data wilayah memakai API statis wilayah Indonesia.</p>
+        ${options?.error ? `<div class="status">${escapeHtml(options.error)}</div>` : ''}
+        <form id="profileForm">
+          <div class="grid">
+            <label class="full">
+              Nama lengkap
+              <input id="fullName" name="fullName" type="text" required value="${escapeHtml(session.name)}" />
+            </label>
+            <label>
+              Provinsi
+              <select id="province" name="provinceId" required><option value="">Memuat provinsi...</option></select>
+            </label>
+            <label>
+              Kabupaten / Kota
+              <select id="regency" name="regencyId" required disabled><option value="">Pilih provinsi dulu</option></select>
+            </label>
+            <label>
+              Kecamatan
+              <select id="district" name="districtId" required disabled><option value="">Pilih kabupaten / kota dulu</option></select>
+            </label>
+            <label>
+              Kelurahan / Desa
+              <select id="village" name="villageId" required disabled><option value="">Pilih kecamatan dulu</option></select>
+            </label>
+          </div>
+          <button id="submitButton" type="submit">Simpan Profil dan Lanjutkan</button>
+          <div class="mini">
+            <span>Gratis 5 obrolan per 3 hari</span>
+            <span>Reset otomatis hari ke-4 dan kelipatannya</span>
+          </div>
+        </form>
+      </main>
+      <script>
+        const form = document.getElementById('profileForm');
+        const submitButton = document.getElementById('submitButton');
+        const province = document.getElementById('province');
+        const regency = document.getElementById('regency');
+        const district = document.getElementById('district');
+        const village = document.getElementById('village');
+
+        function setOptions(target, items, placeholder) {
+          target.innerHTML = '<option value="">' + placeholder + '</option>' + items.map((item) => (
+            '<option value="' + String(item.id) + '">' + String(item.name) + '</option>'
+          )).join('');
+          target.disabled = false;
+        }
+
+        async function fetchRegions(path) {
+          const response = await fetch(path);
+          if (!response.ok) throw new Error('Gagal memuat data wilayah.');
+          return response.json();
+        }
+
+        async function loadProvinces() {
+          const items = await fetchRegions('/api/regions/provinces');
+          setOptions(province, items, 'Pilih provinsi');
+        }
+
+        province.addEventListener('change', async () => {
+          regency.disabled = true;
+          district.disabled = true;
+          village.disabled = true;
+          regency.innerHTML = '<option value="">Memuat kabupaten / kota...</option>';
+          district.innerHTML = '<option value="">Pilih kabupaten / kota dulu</option>';
+          village.innerHTML = '<option value="">Pilih kecamatan dulu</option>';
+          if (!province.value) return;
+          const items = await fetchRegions('/api/regions/regencies/' + encodeURIComponent(province.value));
+          setOptions(regency, items, 'Pilih kabupaten / kota');
+        });
+
+        regency.addEventListener('change', async () => {
+          district.disabled = true;
+          village.disabled = true;
+          district.innerHTML = '<option value="">Memuat kecamatan...</option>';
+          village.innerHTML = '<option value="">Pilih kecamatan dulu</option>';
+          if (!regency.value) return;
+          const items = await fetchRegions('/api/regions/districts/' + encodeURIComponent(regency.value));
+          setOptions(district, items, 'Pilih kecamatan');
+        });
+
+        district.addEventListener('change', async () => {
+          village.disabled = true;
+          village.innerHTML = '<option value="">Memuat kelurahan / desa...</option>';
+          if (!district.value) return;
+          const items = await fetchRegions('/api/regions/villages/' + encodeURIComponent(district.value));
+          setOptions(village, items, 'Pilih kelurahan / desa');
+        });
+
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          submitButton.disabled = true;
+          const formData = new FormData(form);
+          const payload = Object.fromEntries(formData.entries());
+
+          payload.provinceName = province.options[province.selectedIndex]?.text || '';
+          payload.regencyName = regency.options[regency.selectedIndex]?.text || '';
+          payload.districtName = district.options[district.selectedIndex]?.text || '';
+          payload.villageName = village.options[village.selectedIndex]?.text || '';
+
+          const response = await fetch('/api/profile/setup', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            alert(data.error || 'Gagal menyimpan profil.');
+            submitButton.disabled = false;
+            return;
+          }
+          window.location.href = '${escapeHtml('/chat')}';
+        });
+
+        loadProvinces().catch(() => {
+          province.innerHTML = '<option value="">Gagal memuat provinsi</option>';
+        });
+      </script>
+    </body>
+    </html>
+  `;
+}
+
 function renderAdminPage(session: WebSession) {
   return `
     <!DOCTYPE html>
@@ -670,6 +960,14 @@ function renderAdminPage(session: WebSession) {
           </div>
         </div>
 
+        <div class="panel">
+          <h2>Web Users</h2>
+          <p class="hint">Kelola user Google web: lihat profil, status akun, kuota aktif, dan reset jatah obrolan.</p>
+          <div id="webUsersList" class="list">
+            <div class="hint">Belum dimuat.</div>
+          </div>
+        </div>
+
         <div class="grid">
           <div class="panel">
             <h2>Knowledge Editor</h2>
@@ -722,6 +1020,7 @@ function renderAdminPage(session: WebSession) {
         const routeList = document.getElementById('routeList');
         const topUsersList = document.getElementById('topUsersList');
         const failureList = document.getElementById('failureList');
+        const webUsersList = document.getElementById('webUsersList');
 
         tokenInput.value = params.get('token') || '';
 
@@ -844,6 +1143,59 @@ function renderAdminPage(session: WebSession) {
             : '<div class="hint">Belum ada failure yang terekam.</div>';
         }
 
+        async function loadWebUsers() {
+          const data = await api('/admin/users');
+          const items = Array.isArray(data.items) ? data.items : [];
+          webUsersList.innerHTML = items.length
+            ? items.map((item) => \`
+                <div class="item">
+                  <div class="row" style="justify-content: space-between; align-items: flex-start;">
+                    <div>
+                      <strong>\${escapeHtml(item.fullName || item.googleName || item.email)}</strong>
+                      <div class="hint">\${escapeHtml(item.email)}</div>
+                      <div class="hint">\${escapeHtml(item.region || 'Wilayah belum diisi')}</div>
+                    </div>
+                    <div class="row">
+                      <button type="button" class="secondary" onclick="toggleWebUserSuspension('\${escapeHtml(item.email)}', \${item.suspended ? 'false' : 'true'})">\${item.suspended ? 'Aktifkan' : 'Suspend'}</button>
+                      <button type="button" onclick="resetWebUserQuota('\${escapeHtml(item.email)}')">Reset Kuota</button>
+                    </div>
+                  </div>
+                  <p>Role: \${escapeHtml(item.role || 'visitor')} | Profil: \${item.profileCompleted ? 'lengkap' : 'belum lengkap'} | Sisa: \${item.quota?.remaining ?? '-'} / \${item.quota?.limit ?? '-'} | Reset: \${escapeHtml(item.quota?.resetsAt || '-')}</p>
+                </div>
+              \`).join('')
+            : '<div class="hint">Belum ada user web.</div>';
+        }
+
+        window.toggleWebUserSuspension = async (email, suspended) => {
+          try {
+            setStatus(globalStatus, 'Memperbarui status user...');
+            await api('/admin/users/' + encodeURIComponent(email), {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ suspended }),
+            });
+            setStatus(globalStatus, 'Status user diperbarui.', 'ok');
+            await loadWebUsers();
+          } catch (error) {
+            setStatus(globalStatus, error.message, 'error');
+          }
+        };
+
+        window.resetWebUserQuota = async (email) => {
+          try {
+            setStatus(globalStatus, 'Mereset kuota user...');
+            await api('/admin/users/' + encodeURIComponent(email), {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ resetQuota: true }),
+            });
+            setStatus(globalStatus, 'Kuota user berhasil direset.', 'ok');
+            await loadWebUsers();
+          } catch (error) {
+            setStatus(globalStatus, error.message, 'error');
+          }
+        };
+
         async function loadQuota() {
           const data = await api('/admin/quota');
           const status = data.providerStatus || {};
@@ -897,7 +1249,7 @@ function renderAdminPage(session: WebSession) {
         document.getElementById('loadAllButton').addEventListener('click', async () => {
           try {
             setStatus(globalStatus, 'Memuat state runtime...');
-            await Promise.all([loadConfig(), loadKnowledge(), loadInsights(), loadQuota()]);
+            await Promise.all([loadConfig(), loadKnowledge(), loadInsights(), loadQuota(), loadWebUsers()]);
             setStatus(globalStatus, 'State runtime berhasil dimuat.', 'ok');
           } catch (error) {
             setStatus(globalStatus, error.message, 'error');
@@ -1005,7 +1357,7 @@ function renderAdminPage(session: WebSession) {
   `;
 }
 
-function renderWebChatPage(session: WebSession) {
+function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<ReturnType<typeof getWebUserByEmail>>>, quota: ReturnType<typeof toWebQuotaStatus>) {
   const adminLinks = session.role === 'admin'
     ? `
           <div class="sidebar-links">
@@ -1762,8 +2114,19 @@ function renderWebChatPage(session: WebSession) {
           ${adminLinks}
           <div class="account-card">
             <div class="account-role">${escapeHtml(session.role)}</div>
-            <div class="account-name">${escapeHtml(session.name)}</div>
+            <div class="account-name">${escapeHtml(account.fullName || session.name)}</div>
             <div class="account-email">${escapeHtml(session.email)}</div>
+            <div class="account-email">${escapeHtml([account.villageName, account.districtName, account.regencyName, account.provinceName].filter(Boolean).join(', ') || 'Wilayah belum diisi')}</div>
+            <div style="margin-top:12px;">
+              <div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:rgba(255,255,255,0.7);">
+                <span>Kuota 3 hari</span>
+                <span id="quotaLabel">${quota.remaining}/${quota.limit} tersisa</span>
+              </div>
+              <div style="margin-top:8px;height:10px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;">
+                <div id="quotaBar" style="width:${Math.max(0, Math.min(100, (quota.used / quota.limit) * 100))}%;height:100%;border-radius:999px;background:${quota.remaining > 0 ? 'linear-gradient(90deg,#60a5fa,#22d3ee)' : 'linear-gradient(90deg,#f59e0b,#ef4444)'};"></div>
+              </div>
+              <div id="quotaReset" style="margin-top:8px;color:rgba(255,255,255,0.56);font-size:10px;">Reset otomatis: ${escapeHtml(quota.resetsAt ? new Date(quota.resetsAt).toLocaleString('id-ID') : '-')}</div>
+            </div>
             <div class="account-actions">
               <a href="/logout">Logout</a>
             </div>
@@ -1818,6 +2181,9 @@ function renderWebChatPage(session: WebSession) {
         const activeSkillTitle = document.getElementById('activeSkillTitle');
         const activeSkillDescription = document.getElementById('activeSkillDescription');
         const modelStatus = document.getElementById('modelStatus');
+        const quotaLabel = document.getElementById('quotaLabel');
+        const quotaBar = document.getElementById('quotaBar');
+        const quotaReset = document.getElementById('quotaReset');
         const welcome = document.getElementById('welcome');
         const clearButton = document.getElementById('clearButton');
         const sidebar = document.getElementById('sidebar');
@@ -1828,6 +2194,39 @@ function renderWebChatPage(session: WebSession) {
           selectedSkillId: '',
           history: loadStoredHistory(),
         };
+
+        function formatResetTime(value) {
+          if (!value) return '-';
+          try {
+            return new Intl.DateTimeFormat('id-ID', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }).format(new Date(value));
+          } catch {
+            return String(value);
+          }
+        }
+
+        function applyQuota(quota) {
+          if (!quota || !quotaLabel || !quotaBar || !quotaReset) return;
+          const remaining = Number(quota.remaining || 0);
+          const limit = Number(quota.limit || 0);
+          const used = Number(quota.used || 0);
+          quotaLabel.textContent = remaining + '/' + limit + ' tersisa';
+          quotaBar.style.width = Math.max(0, Math.min(100, limit ? (used / limit) * 100 : 0)) + '%';
+          quotaBar.style.background = remaining > 0
+            ? 'linear-gradient(90deg,#60a5fa,#22d3ee)'
+            : 'linear-gradient(90deg,#f59e0b,#ef4444)';
+          quotaReset.textContent = 'Reset otomatis: ' + formatResetTime(quota.resetsAt);
+          sendButton.disabled = remaining <= 0;
+          input.disabled = remaining <= 0;
+          input.placeholder = remaining <= 0
+            ? 'Kuota habis. Tunggu reset otomatis.'
+            : 'Tulis sesuatu untuk Cybra...';
+        }
 
         function loadStoredHistory() {
           try {
@@ -2021,6 +2420,13 @@ function renderWebChatPage(session: WebSession) {
           }).join('');
         }
 
+        async function loadMe() {
+          const response = await fetch('/api/me');
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Gagal memuat profil.');
+          applyQuota(data.quota);
+        }
+
         async function submitMessage(rawMessage) {
           const message = String(rawMessage || '').trim();
           if (!message) return;
@@ -2044,7 +2450,11 @@ function renderWebChatPage(session: WebSession) {
               }),
             });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Request failed');
+            if (!response.ok) {
+              if (data.quota) applyQuota(data.quota);
+              throw new Error(data.error || 'Request failed');
+            }
+            applyQuota(data.quota);
             addMessage('assistant', data.reply || '', {
               skillTitle: data.skill?.title,
               route: data.route,
@@ -2067,7 +2477,7 @@ function renderWebChatPage(session: WebSession) {
             const text = error instanceof Error ? error.message : 'Terjadi kesalahan.';
             addMessage('assistant', text, { route: 'error' });
           } finally {
-            sendButton.disabled = false;
+            sendButton.disabled = Boolean(input.disabled);
             input.focus();
           }
         }
@@ -2108,7 +2518,7 @@ function renderWebChatPage(session: WebSession) {
           button.addEventListener('click', () => submitMessage(button.textContent));
         });
 
-        Promise.all([loadSkills(), loadAgentReachStatus()]).then(() => {
+        Promise.all([loadSkills(), loadAgentReachStatus(), loadMe()]).then(() => {
           for (const item of state.history) {
             addMessage(item.role, item.content, { route: 'riwayat' });
           }
@@ -2128,6 +2538,10 @@ app.get('/dashboard', async (c) => {
   const session = await requireAdminPageSession(c);
   if (!session) {
     return c.body(null);
+  }
+  const account = await requireCompleteWebAccount(c, session);
+  if (!account || account instanceof Response) {
+    return account || c.body(null);
   }
 
   const userCount = await db.select({ value: count() }).from(users);
@@ -2401,6 +2815,10 @@ app.get('/dashboard', async (c) => {
 app.get('/login', async (c) => {
   const session = await getWebSession(c);
   if (session) {
+    const account = await getCurrentWebAccount(session);
+    if (!isWebProfileComplete(account)) {
+      return c.redirect('/profile/setup');
+    }
     return c.redirect(session.role === 'admin' ? '/dashboard' : '/chat');
   }
 
@@ -2432,6 +2850,10 @@ app.get('/auth/google/callback', async (c) => {
 
   try {
     const session = await createWebSessionFromGoogle(c, code);
+    const account = await syncWebUserAccount(session);
+    if (!isWebProfileComplete(account)) {
+      return c.redirect('/profile/setup');
+    }
     return c.redirect(session.role === 'admin' && state === '/chat' ? '/dashboard' : state);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Login Google gagal.';
@@ -2442,6 +2864,22 @@ app.get('/auth/google/callback', async (c) => {
 app.get('/logout', (c) => {
   clearWebSession(c);
   return c.redirect('/login');
+});
+
+app.get('/profile/setup', async (c) => {
+  const session = await requireWebSession(c);
+  if (!session) {
+    return c.body(null);
+  }
+
+  const account = await getCurrentWebAccount(session) || await syncWebUserAccount(session);
+  if (isWebProfileComplete(account)) {
+    return c.redirect(session.role === 'admin' ? '/dashboard' : '/chat');
+  }
+
+  return c.html(renderProfileSetupPage(session, {
+    error: c.req.query('error') || undefined,
+  }));
 });
 
 app.get('/favicon.ico', async (c) => {
@@ -2474,6 +2912,10 @@ app.get('/admin', async (c) => {
   if (!session) {
     return c.body(null);
   }
+  const account = await requireCompleteWebAccount(c, session);
+  if (!account || account instanceof Response) {
+    return account || c.body(null);
+  }
   return c.html(renderAdminPage(session));
 });
 
@@ -2481,6 +2923,10 @@ app.get('/', async (c) => {
   const session = await getWebSession(c);
   if (!session) {
     return c.redirect('/login');
+  }
+  const account = await getCurrentWebAccount(session);
+  if (!isWebProfileComplete(account)) {
+    return c.redirect('/profile/setup');
   }
   return c.redirect(session.role === 'admin' ? '/dashboard' : '/chat');
 });
@@ -2490,13 +2936,124 @@ app.get('/chat', async (c) => {
   if (!session) {
     return c.body(null);
   }
-  return c.html(renderWebChatPage(session));
+  const account = await requireCompleteWebAccount(c, session);
+  if (!account || account instanceof Response) {
+    return account || c.body(null);
+  }
+  return c.html(renderWebChatPage(session, account, toWebQuotaStatus(account)));
+});
+
+app.get('/api/regions/provinces', async (c) => {
+  const response = await fetch('https://emsifa.github.io/api-wilayah-indonesia/api/provinces.json');
+  if (!response.ok) {
+    return c.json({ error: 'Failed to fetch provinces' }, 502);
+  }
+  return c.json(await response.json());
+});
+
+app.get('/api/regions/regencies/:provinceId', async (c) => {
+  const response = await fetch(`https://emsifa.github.io/api-wilayah-indonesia/api/regencies/${encodeURIComponent(c.req.param('provinceId'))}.json`);
+  if (!response.ok) {
+    return c.json({ error: 'Failed to fetch regencies' }, 502);
+  }
+  return c.json(await response.json());
+});
+
+app.get('/api/regions/districts/:regencyId', async (c) => {
+  const response = await fetch(`https://emsifa.github.io/api-wilayah-indonesia/api/districts/${encodeURIComponent(c.req.param('regencyId'))}.json`);
+  if (!response.ok) {
+    return c.json({ error: 'Failed to fetch districts' }, 502);
+  }
+  return c.json(await response.json());
+});
+
+app.get('/api/regions/villages/:districtId', async (c) => {
+  const response = await fetch(`https://emsifa.github.io/api-wilayah-indonesia/api/villages/${encodeURIComponent(c.req.param('districtId'))}.json`);
+  if (!response.ok) {
+    return c.json({ error: 'Failed to fetch villages' }, 502);
+  }
+  return c.json(await response.json());
+});
+
+app.post('/api/profile/setup', async (c) => {
+  const session = await requireApiSession(c);
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null);
+  if (!body) {
+    return c.json({ error: 'Payload tidak valid.' }, 400);
+  }
+
+  const requiredFields = [
+    'fullName',
+    'provinceId',
+    'provinceName',
+    'regencyId',
+    'regencyName',
+    'districtId',
+    'districtName',
+    'villageId',
+    'villageName',
+  ] as const;
+
+  for (const field of requiredFields) {
+    if (typeof body[field] !== 'string' || !String(body[field]).trim()) {
+      return c.json({ error: `${field} wajib diisi.` }, 400);
+    }
+  }
+
+  const saved = await saveWebUserProfile({
+    email: session.email,
+    fullName: String(body.fullName),
+    provinceId: String(body.provinceId),
+    provinceName: String(body.provinceName),
+    regencyId: String(body.regencyId),
+    regencyName: String(body.regencyName),
+    districtId: String(body.districtId),
+    districtName: String(body.districtName),
+    villageId: String(body.villageId),
+    villageName: String(body.villageName),
+  });
+
+  return c.json({
+    ok: true,
+    profile: saved,
+    quota: toWebQuotaStatus(saved || null),
+  });
+});
+
+app.get('/api/me', async (c) => {
+  const session = await requireApiSession(c);
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const account = await getCurrentWebAccount(session);
+  if (!account) {
+    return c.json({ error: 'Web account not found' }, 404);
+  }
+
+  return c.json({
+    session,
+    profile: {
+      fullName: account.fullName,
+      profileCompleted: Boolean(account.profileCompleted),
+      region: [account.villageName, account.districtName, account.regencyName, account.provinceName].filter(Boolean).join(', '),
+    },
+    quota: await getWebQuotaStatus(session.email),
+  });
 });
 
 app.get('/api/chat/skills', async (c) => {
   const session = await requireApiSession(c);
   if (!session) {
     return c.json({ error: 'Unauthorized' }, 401);
+  }
+  const account = await requireCompleteWebAccount(c, session, true);
+  if (!account || account instanceof Response) {
+    return account || c.json({ error: 'Unauthorized' }, 401);
   }
   return c.json({ skills: getWebChatSkills() });
 });
@@ -2506,6 +3063,10 @@ app.get('/api/agent-reach/status', async (c) => {
   if (!session) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
+  const account = await requireCompleteWebAccount(c, session, true);
+  if (!account || account instanceof Response) {
+    return account || c.json({ error: 'Unauthorized' }, 401);
+  }
   return c.json({ channels: getAgentReachStatus() });
 });
 
@@ -2513,6 +3074,10 @@ app.get('/api/exports/:fileName', async (c) => {
   const session = await requireApiSession(c);
   if (!session) {
     return c.json({ error: 'Unauthorized' }, 401);
+  }
+  const account = await requireCompleteWebAccount(c, session, true);
+  if (!account || account instanceof Response) {
+    return account || c.json({ error: 'Unauthorized' }, 401);
   }
   const fileName = c.req.param('fileName');
   const filePath = getManagedExportFile(fileName);
@@ -2530,6 +3095,10 @@ app.post('/api/chat', async (c) => {
   const session = await requireApiSession(c);
   if (!session) {
     return c.json({ error: 'Unauthorized' }, 401);
+  }
+  const account = await requireCompleteWebAccount(c, session, true);
+  if (!account || account instanceof Response) {
+    return account || c.json({ error: 'Unauthorized' }, 401);
   }
 
   const body = await c.req.json<{
@@ -2552,13 +3121,25 @@ app.post('/api/chat', async (c) => {
       })
     : [];
 
+  const quotaAttempt = await consumeWebChatQuota(session.email);
+  if (!quotaAttempt.ok) {
+    const statusCode = quotaAttempt.reason === 'suspended' ? 403 : 429;
+    const message = quotaAttempt.reason === 'suspended'
+      ? 'Akun web ini sedang dinonaktifkan admin.'
+      : `Kuota habis. Anda mendapat ${WEB_CHAT_QUOTA_LIMIT} obrolan gratis setiap ${WEB_CHAT_QUOTA_WINDOW_DAYS} hari.`;
+    return c.json({ error: message, quota: quotaAttempt.quota }, statusCode);
+  }
+
   const result = await handleWebChat({
     message: body.message,
     skillId: typeof body.skillId === 'string' ? body.skillId : undefined,
     history,
   });
 
-  return c.json(result);
+  return c.json({
+    ...result,
+    quota: quotaAttempt.quota,
+  });
 });
 
 app.get('/admin/insights', async (c) => {
@@ -2684,6 +3265,34 @@ app.get('/admin/knowledge', async (c) => {
   }
 
   return c.json({ items: listKnowledgeDocuments() });
+});
+
+app.get('/admin/users', async (c) => {
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
+  }
+
+  return c.json({ items: await listManagedWebUsers() });
+});
+
+app.patch('/admin/users/:email', async (c) => {
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
+  }
+
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null);
+  const updated = await updateManagedWebUser(c.req.param('email'), {
+    suspended: body && typeof body.suspended === 'boolean' ? body.suspended : undefined,
+    resetQuota: Boolean(body && body.resetQuota),
+  });
+
+  if (!updated) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+
+  return c.json({ ok: true, item: updated, quota: toWebQuotaStatus(updated) });
 });
 
 app.post('/admin/knowledge', async (c) => {

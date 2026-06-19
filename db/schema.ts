@@ -57,3 +57,26 @@ export const documentSessions = sqliteTable('document_sessions', {
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).default(new Date()),
 });
+
+export const webUsers = sqliteTable('web_users', {
+  email: text('email').primaryKey(),
+  googleName: text('google_name'),
+  picture: text('picture'),
+  role: text('role').notNull().default('visitor'),
+  fullName: text('full_name'),
+  provinceId: text('province_id'),
+  provinceName: text('province_name'),
+  regencyId: text('regency_id'),
+  regencyName: text('regency_name'),
+  districtId: text('district_id'),
+  districtName: text('district_name'),
+  villageId: text('village_id'),
+  villageName: text('village_name'),
+  profileCompleted: integer('profile_completed', { mode: 'boolean' }).notNull().default(false),
+  suspended: integer('suspended', { mode: 'boolean' }).notNull().default(false),
+  chatCount: integer('chat_count').notNull().default(0),
+  quotaCycleStart: integer('quota_cycle_start', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(new Date()),
+  lastLoginAt: integer('last_login_at', { mode: 'timestamp' }),
+});

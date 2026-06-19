@@ -55,11 +55,37 @@ sqlite.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
+  CREATE TABLE IF NOT EXISTS web_users (
+    email TEXT PRIMARY KEY NOT NULL,
+    google_name TEXT,
+    picture TEXT,
+    role TEXT NOT NULL DEFAULT 'visitor',
+    full_name TEXT,
+    province_id TEXT,
+    province_name TEXT,
+    regency_id TEXT,
+    regency_name TEXT,
+    district_id TEXT,
+    district_name TEXT,
+    village_id TEXT,
+    village_name TEXT,
+    profile_completed INTEGER NOT NULL DEFAULT 0,
+    suspended INTEGER NOT NULL DEFAULT 0,
+    chat_count INTEGER NOT NULL DEFAULT 0,
+    quota_cycle_start INTEGER,
+    created_at INTEGER DEFAULT (unixepoch()),
+    updated_at INTEGER DEFAULT (unixepoch()),
+    last_login_at INTEGER
+  );
+
   CREATE INDEX IF NOT EXISTS messages_user_id_idx ON messages(user_id);
   CREATE INDEX IF NOT EXISTS messages_timestamp_idx ON messages(timestamp);
   CREATE INDEX IF NOT EXISTS telemetry_event_name_idx ON telemetry_events(event);
   CREATE INDEX IF NOT EXISTS telemetry_created_at_idx ON telemetry_events(created_at);
   CREATE INDEX IF NOT EXISTS document_sessions_updated_at_idx ON document_sessions(updated_at);
+  CREATE INDEX IF NOT EXISTS web_users_role_idx ON web_users(role);
+  CREATE INDEX IF NOT EXISTS web_users_profile_completed_idx ON web_users(profile_completed);
+  CREATE INDEX IF NOT EXISTS web_users_last_login_at_idx ON web_users(last_login_at);
 `);
 
 function ensureColumn(tableName: string, columnName: string, definition: string) {
@@ -74,6 +100,24 @@ function ensureColumn(tableName: string, columnName: string, definition: string)
 ensureColumn('document_sessions', 'source_kind', "source_kind TEXT NOT NULL DEFAULT 'gemini'");
 ensureColumn('document_sessions', 'local_file_path', 'local_file_path TEXT');
 ensureColumn('document_sessions', 'extracted_text', 'extracted_text TEXT');
+ensureColumn('web_users', 'google_name', 'google_name TEXT');
+ensureColumn('web_users', 'picture', 'picture TEXT');
+ensureColumn('web_users', 'role', "role TEXT NOT NULL DEFAULT 'visitor'");
+ensureColumn('web_users', 'full_name', 'full_name TEXT');
+ensureColumn('web_users', 'province_id', 'province_id TEXT');
+ensureColumn('web_users', 'province_name', 'province_name TEXT');
+ensureColumn('web_users', 'regency_id', 'regency_id TEXT');
+ensureColumn('web_users', 'regency_name', 'regency_name TEXT');
+ensureColumn('web_users', 'district_id', 'district_id TEXT');
+ensureColumn('web_users', 'district_name', 'district_name TEXT');
+ensureColumn('web_users', 'village_id', 'village_id TEXT');
+ensureColumn('web_users', 'village_name', 'village_name TEXT');
+ensureColumn('web_users', 'profile_completed', 'profile_completed INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_users', 'suspended', 'suspended INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_users', 'chat_count', 'chat_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_users', 'quota_cycle_start', 'quota_cycle_start INTEGER');
+ensureColumn('web_users', 'updated_at', 'updated_at INTEGER DEFAULT (unixepoch())');
+ensureColumn('web_users', 'last_login_at', 'last_login_at INTEGER');
 
 sqlite.close();
 
