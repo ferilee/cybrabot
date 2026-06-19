@@ -1658,6 +1658,30 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
   const displayName = account.fullName || session.name;
   const avatarUrl = account.picture || session.picture || '';
   const avatarInitial = (displayName.trim()[0] || 'C').toUpperCase();
+  const limit = Number(quota.limit || 0);
+  const remaining = Number(quota.remaining || 0);
+  const percentLeft = Math.max(0, Math.min(100, limit ? Math.round((remaining / limit) * 100) : 0));
+  const progressWidth = Math.max(0, Math.min(100, limit ? (remaining / limit) * 100 : 0));
+  const quotaTone = remaining > 0
+    ? 'linear-gradient(90deg,#22d3ee,#34d399)'
+    : 'linear-gradient(90deg,#f59e0b,#ef4444)';
+  const formatQuotaCountdown = (value?: string | null) => {
+    if (!value) return '-';
+    const diff = new Date(value).getTime() - Date.now();
+    if (!Number.isFinite(diff) || diff <= 0) return 'kurang dari 1m';
+    const totalMinutes = Math.max(1, Math.floor(diff / 60000));
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}h`);
+    if (hours > 0 || days > 0) parts.push(`${hours}j`);
+    parts.push(`${minutes}m`);
+    return parts.join(' ');
+  };
+  const quotaResetLabel = quota.resetsAt
+    ? `${formatQuotaCountdown(quota.resetsAt)} • ${new Date(quota.resetsAt).toLocaleString('id-ID')}`
+    : '-';
   const adminLinks = session.role === 'admin'
     ? `
           <div class="sidebar-links">
@@ -1919,6 +1943,64 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           font-size: 11px;
           overflow-wrap: anywhere;
         }
+        .quota-card {
+          margin-top: 12px;
+          padding: 10px 11px;
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 14px;
+          background: rgba(255,255,255,0.04);
+        }
+        .quota-topline {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .quota-topline strong {
+          font-size: 12px;
+          font-weight: 600;
+          color: rgba(255,255,255,0.9);
+        }
+        .quota-pill {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 4px 10px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 999px;
+          background: rgba(15,23,42,0.32);
+          color: rgba(255,255,255,0.88);
+          font-size: 11px;
+          font-weight: 600;
+          white-space: nowrap;
+        }
+        .quota-meta {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 10px;
+          margin-top: 9px;
+          font-size: 11px;
+          color: rgba(255,255,255,0.78);
+        }
+        .quota-track {
+          margin-top: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.08);
+          overflow: hidden;
+        }
+        .quota-fill {
+          height: 100%;
+          border-radius: 999px;
+          transition: width 160ms ease, background 160ms ease;
+        }
+        .quota-footnote {
+          margin-top: 7px;
+          color: rgba(255,255,255,0.56);
+          font-size: 10px;
+          line-height: 1.35;
+        }
         .account-actions {
           display: grid;
           grid-template-columns: 1fr;
@@ -2051,6 +2133,10 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           color: #fff;
           background: rgba(8,30,48,0.28);
           cursor: pointer;
+        }
+        .icon-button svg {
+          width: 17px;
+          height: 17px;
         }
         .messages {
           min-height: 0;
@@ -2377,6 +2463,149 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           text-align: center;
           font-size: 9px;
         }
+        .intro-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 40;
+          display: grid;
+          place-items: center;
+          padding: 22px;
+          background: rgba(2,10,18,0.68);
+          opacity: 0;
+          visibility: hidden;
+          transition: opacity 220ms ease, visibility 220ms ease;
+        }
+        .intro-modal-backdrop.open {
+          opacity: 1;
+          visibility: visible;
+        }
+        .intro-modal {
+          position: relative;
+          width: min(460px, calc(100vw - 44px));
+          padding: 24px 24px 20px;
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 28px;
+          color: #fff;
+          background: linear-gradient(180deg, rgba(16,53,82,0.96), rgba(8,26,43,0.98));
+          box-shadow: 0 36px 90px rgba(0,0,0,0.42);
+          transform: scale(1.12);
+          opacity: 0;
+          transition: transform 260ms ease, opacity 220ms ease;
+        }
+        .intro-modal-backdrop.open .intro-modal {
+          transform: scale(1);
+          opacity: 1;
+        }
+        .intro-close {
+          position: absolute;
+          top: 14px;
+          right: 14px;
+          display: grid;
+          place-items: center;
+          width: 36px;
+          height: 36px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 50%;
+          color: rgba(255,255,255,0.82);
+          background: rgba(255,255,255,0.05);
+          cursor: pointer;
+        }
+        .intro-logo {
+          display: block;
+          width: 116px;
+          height: 116px;
+          margin: 0 auto 14px;
+          border-radius: 50%;
+          object-fit: cover;
+          box-shadow: 0 16px 36px rgba(5,19,31,0.35);
+        }
+        .intro-modal h3 {
+          margin: 0;
+          text-align: center;
+          font-size: 28px;
+          letter-spacing: -0.04em;
+        }
+        .intro-subtitle {
+          margin: 8px auto 0;
+          max-width: 360px;
+          color: rgba(255,255,255,0.74);
+          text-align: center;
+          font-size: 14px;
+          line-height: 1.55;
+        }
+        .intro-meta {
+          margin-top: 18px;
+          padding: 14px 16px;
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 18px;
+          background: rgba(255,255,255,0.04);
+        }
+        .intro-meta strong {
+          display: block;
+          font-size: 12px;
+          color: rgba(255,255,255,0.58);
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+        .intro-meta span {
+          display: block;
+          margin-top: 7px;
+          font-size: 16px;
+          font-weight: 600;
+        }
+        .intro-cta {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-top: 18px;
+          padding-top: 18px;
+          border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        .intro-cta-copy {
+          min-width: 0;
+        }
+        .intro-cta-copy strong {
+          display: block;
+          font-size: 14px;
+        }
+        .intro-cta-copy span {
+          display: block;
+          margin-top: 4px;
+          color: rgba(255,255,255,0.7);
+          font-size: 12px;
+          overflow-wrap: anywhere;
+        }
+        .intro-links {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .intro-icon-link,
+        .intro-text-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid rgba(255,255,255,0.12);
+          text-decoration: none;
+        }
+        .intro-icon-link {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          color: #fff;
+          background: rgba(0,136,204,0.18);
+        }
+        .intro-text-link {
+          margin-top: 6px;
+          padding: 11px 14px;
+          border-radius: 999px;
+          color: rgba(255,255,255,0.92);
+          background: rgba(255,255,255,0.06);
+          font-size: 12px;
+          font-weight: 600;
+          white-space: nowrap;
+        }
         .sidebar-backdrop { display: none; }
         @keyframes arrive {
           from { opacity: 0; transform: translateY(9px); }
@@ -2432,6 +2661,22 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           .message-row.user .bubble { padding: 14px 27px 15px 18px; border-radius: 30px 14px 30px 30px; }
           .message-content { font-size: 12px; }
           .composer-wrap { padding: 8px 10px max(12px, env(safe-area-inset-bottom)); }
+          .intro-modal {
+            width: min(420px, calc(100vw - 32px));
+            padding: 22px 18px 18px;
+            border-radius: 24px;
+          }
+          .intro-logo {
+            width: 100px;
+            height: 100px;
+          }
+          .intro-modal h3 {
+            font-size: 24px;
+          }
+          .intro-cta {
+            align-items: flex-start;
+            flex-direction: column;
+          }
         }
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after {
@@ -2471,15 +2716,21 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
                 <div class="account-email">${escapeHtml([account.villageName, account.districtName, account.regencyName, account.provinceName].filter(Boolean).join(', ') || 'Wilayah belum diisi')}</div>
               </div>
             </div>
-            <div style="margin-top:12px;">
-              <div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:rgba(255,255,255,0.7);">
-                <span>Kuota 3 hari</span>
-                <span id="quotaLabel">${quota.remaining}/${quota.limit} tersisa</span>
+            <div class="quota-card">
+              <div class="quota-topline">
+                <strong>${limit} chat limit (3 hari)</strong>
+                <span class="quota-pill">Free</span>
               </div>
-              <div style="margin-top:8px;height:10px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;">
-                <div id="quotaBar" style="width:${Math.max(0, Math.min(100, (quota.used / quota.limit) * 100))}%;height:100%;border-radius:999px;background:${quota.remaining > 0 ? 'linear-gradient(90deg,#60a5fa,#22d3ee)' : 'linear-gradient(90deg,#f59e0b,#ef4444)'};"></div>
+              <div class="quota-meta">
+                <span id="quotaLabel">${percentLeft}% left</span>
+                <span id="quotaReset">resets ${escapeHtml(quotaResetLabel)}</span>
               </div>
-              <div id="quotaReset" style="margin-top:8px;color:rgba(255,255,255,0.56);font-size:10px;">Reset otomatis: ${escapeHtml(quota.resetsAt ? new Date(quota.resetsAt).toLocaleString('id-ID') : '-')}</div>
+              <div class="quota-track">
+                <div id="quotaBar" class="quota-fill" style="width:${progressWidth}%;background:${quotaTone};"></div>
+              </div>
+              <div class="quota-footnote">
+                Tersisa ${remaining}/${limit} chat. Reset masuk hari ke-4 dan berulang setiap 3 hari.
+              </div>
             </div>
             <div class="account-actions">
               <a href="/logout">Logout</a>
@@ -2497,6 +2748,11 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             </div>
             <div class="header-actions">
               <span id="modelStatus" class="model-pill">Model otomatis</span>
+              <button id="introButton" class="icon-button" type="button" title="Tentang CybraFeriBot" aria-label="Tentang CybraFeriBot">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 16v-4m0-4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
               <button id="clearButton" class="icon-button" type="button" title="Percakapan baru" aria-label="Percakapan baru">↻</button>
             </div>
           </header>
@@ -2525,6 +2781,39 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           </footer>
         </main>
       </div>
+      <div id="introModalBackdrop" class="intro-modal-backdrop" aria-hidden="true">
+        <div class="intro-modal" role="dialog" aria-modal="true" aria-labelledby="introModalTitle">
+          <button id="introModalClose" class="intro-close" type="button" aria-label="Tutup modal">✕</button>
+          <img class="intro-logo" src="/assets/cybrabot-logo.png" alt="Logo CybraFeriBot">
+          <h3 id="introModalTitle">CybraFeriBot</h3>
+          <p class="intro-subtitle">
+            Asisten AI untuk belajar, riset, dokumen, dan percakapan teknis. Cybra dirancang agar responsif, rapi, dan langsung bisa dipakai.
+          </p>
+          <div class="intro-meta">
+            <strong>Pengembang</strong>
+            <span>Ferilee</span>
+          </div>
+          <div class="intro-cta">
+            <div class="intro-cta-copy">
+              <strong>Kontak Pengembang</strong>
+              <span>Instagram</span>
+              <a class="intro-text-link" href="https://instagram.com/therealferilee" target="_blank" rel="noreferrer">therealferilee</a>
+            </div>
+            <div class="intro-links">
+              <a class="intro-icon-link" href="https://t.me/ferilee" target="_blank" rel="noreferrer" aria-label="Telegram Ferilee" title="@ferilee">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M21.2 4.36 3.9 11.02c-1.18.47-1.17 1.13-.22 1.42l4.44 1.39 1.71 5.35c.23.63.12.88.77.88.5 0 .72-.23 1-.5l2.42-2.35 5.02 3.71c.92.51 1.58.25 1.81-.85l2.95-13.89c.34-1.34-.51-1.95-1.6-1.46ZM9 13.5l10.11-6.38c.5-.31.96-.14.59.19l-8.66 7.81-.34 3.64L9 13.5Z" fill="currentColor"/>
+                </svg>
+              </a>
+              <a class="intro-icon-link" href="https://ferilee.gurumuda.eu.org" target="_blank" rel="noreferrer" aria-label="Website Ferilee" title="ferilee.gurumuda.eu.org">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M3 12h18M12 3a15.3 15.3 0 0 1 4 9 15.3 15.3 0 0 1-4 9 15.3 15.3 0 0 1-4-9 15.3 15.3 0 0 1 4-9Zm0 0a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
       <script>
         const skillList = document.getElementById('skillList');
         const reachStatus = document.getElementById('reachStatus');
@@ -2539,10 +2828,13 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         const quotaBar = document.getElementById('quotaBar');
         const quotaReset = document.getElementById('quotaReset');
         const welcome = document.getElementById('welcome');
+        const introButton = document.getElementById('introButton');
         const clearButton = document.getElementById('clearButton');
         const sidebar = document.getElementById('sidebar');
         const sidebarBackdrop = document.getElementById('sidebarBackdrop');
         const mobileMenu = document.getElementById('mobileMenu');
+        const introModalBackdrop = document.getElementById('introModalBackdrop');
+        const introModalClose = document.getElementById('introModalClose');
         const state = {
           skills: [],
           selectedSkillId: '',
@@ -2550,6 +2842,10 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         };
         const userAvatarUrl = ${JSON.stringify(avatarUrl)};
         const userAvatarInitial = ${JSON.stringify(avatarInitial)};
+        const introTimerKey = ${JSON.stringify(`cybra-intro-start:${session.email}`)};
+        const introAutoShownKey = ${JSON.stringify(`cybra-intro-auto-shown:${session.email}`)};
+        let introTimerId = 0;
+        let introAutoCloseId = 0;
 
         function formatResetTime(value) {
           if (!value) return '-';
@@ -2566,17 +2862,36 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           }
         }
 
+        function formatResetCountdown(value) {
+          if (!value) return '-';
+          const diff = new Date(value).getTime() - Date.now();
+          if (!Number.isFinite(diff) || diff <= 0) return 'kurang dari 1m';
+          const totalMinutes = Math.max(1, Math.floor(diff / 60000));
+          const days = Math.floor(totalMinutes / 1440);
+          const hours = Math.floor((totalMinutes % 1440) / 60);
+          const minutes = totalMinutes % 60;
+          const parts = [];
+          if (days > 0) parts.push(days + 'h');
+          if (hours > 0 || days > 0) parts.push(hours + 'j');
+          parts.push(minutes + 'm');
+          return parts.join(' ');
+        }
+
         function applyQuota(quota) {
           if (!quota || !quotaLabel || !quotaBar || !quotaReset) return;
           const remaining = Number(quota.remaining || 0);
           const limit = Number(quota.limit || 0);
-          const used = Number(quota.used || 0);
-          quotaLabel.textContent = remaining + '/' + limit + ' tersisa';
-          quotaBar.style.width = Math.max(0, Math.min(100, limit ? (used / limit) * 100 : 0)) + '%';
+          const percentLeft = Math.max(0, Math.min(100, limit ? Math.round((remaining / limit) * 100) : 0));
+          quotaLabel.textContent = percentLeft + '% left';
+          quotaBar.style.width = Math.max(0, Math.min(100, limit ? (remaining / limit) * 100 : 0)) + '%';
           quotaBar.style.background = remaining > 0
-            ? 'linear-gradient(90deg,#60a5fa,#22d3ee)'
+            ? 'linear-gradient(90deg,#22d3ee,#34d399)'
             : 'linear-gradient(90deg,#f59e0b,#ef4444)';
-          quotaReset.textContent = 'Reset otomatis: ' + formatResetTime(quota.resetsAt);
+          const countdown = formatResetCountdown(quota.resetsAt);
+          const resetTime = formatResetTime(quota.resetsAt);
+          quotaReset.textContent = quota.resetsAt
+            ? 'resets ' + countdown + ' • ' + resetTime
+            : 'reset belum tersedia';
           sendButton.disabled = remaining <= 0;
           input.disabled = remaining <= 0;
           input.placeholder = remaining <= 0
@@ -2736,6 +3051,49 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           sidebarBackdrop.classList.remove('open');
         }
 
+        function hideIntroModal() {
+          if (!introModalBackdrop) return;
+          if (introAutoCloseId) {
+            window.clearTimeout(introAutoCloseId);
+            introAutoCloseId = 0;
+          }
+          introModalBackdrop.classList.remove('open');
+          introModalBackdrop.setAttribute('aria-hidden', 'true');
+        }
+
+        function showIntroModal(mode = 'manual') {
+          if (!introModalBackdrop) return;
+          if (introAutoCloseId) {
+            window.clearTimeout(introAutoCloseId);
+            introAutoCloseId = 0;
+          }
+          introModalBackdrop.classList.add('open');
+          introModalBackdrop.setAttribute('aria-hidden', 'false');
+          if (mode === 'auto') {
+            sessionStorage.setItem(introAutoShownKey, '1');
+            introAutoCloseId = window.setTimeout(() => {
+              hideIntroModal();
+            }, 10000);
+          }
+        }
+
+        function scheduleIntroModal() {
+          if (!introModalBackdrop) return;
+          if (sessionStorage.getItem(introAutoShownKey) === '1') return;
+          const stored = Number(sessionStorage.getItem(introTimerKey) || '');
+          const startedAt = Number.isFinite(stored) && stored > 0 ? stored : Date.now();
+          sessionStorage.setItem(introTimerKey, String(startedAt));
+          const remainingMs = Math.max(0, 180000 - (Date.now() - startedAt));
+          if (remainingMs === 0) {
+            showIntroModal('auto');
+            return;
+          }
+          if (introTimerId) {
+            window.clearTimeout(introTimerId);
+          }
+          introTimerId = window.setTimeout(() => showIntroModal('auto'), remainingMs);
+        }
+
         function selectSkill(skillId) {
           state.selectedSkillId = skillId;
           const selected = state.skills.find((skill) => skill.id === skillId);
@@ -2874,6 +3232,19 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           sidebarBackdrop.classList.add('open');
         });
         sidebarBackdrop.addEventListener('click', closeSidebar);
+        introButton?.addEventListener('click', () => showIntroModal('manual'));
+        introModalClose?.addEventListener('click', hideIntroModal);
+        introModalBackdrop?.addEventListener('click', (event) => {
+          if (event.target === introModalBackdrop) {
+            hideIntroModal();
+          }
+        });
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && introModalBackdrop?.classList.contains('open')) {
+            hideIntroModal();
+          }
+        });
+        scheduleIntroModal();
 
         document.querySelectorAll('.suggestion').forEach((button) => {
           button.addEventListener('click', () => submitMessage(button.textContent));
