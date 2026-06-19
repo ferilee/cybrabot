@@ -8,6 +8,8 @@ export function buildVisionPrompt(mode: VisionMode, prompt?: string) {
       return (
         `Baca isi gambar ini dengan teliti.\n` +
         `Kalau berisi soal, tulis ulang inti soalnya dengan rapi lalu selesaikan langkah demi langkah.\n` +
+        `Kalau ada rumus, tulis dengan LaTeX yang konsisten. Gunakan $...$ untuk inline dan $$...$$ untuk rumus blok.\n` +
+        `Pisahkan rumus yang dipakai, langkah perhitungan, dan jawaban akhir. Letakkan rumus penting pada baris tersendiri.\n` +
         `Tampilkan jawaban akhir dengan jelas.\n` +
         `Kalau ada bagian yang ambigu atau tidak terbaca, sebutkan bagian itu secara jujur.\n` +
         (userPrompt ? `\nPermintaan pengguna: ${userPrompt}` : '')

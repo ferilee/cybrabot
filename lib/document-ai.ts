@@ -238,6 +238,7 @@ export async function summarizeDocumentFromPath(
       `- Subjudul diawali "## "\n` +
       `- Poin bullet diawali "- "\n` +
       `- Paragraf biasa tanpa markup lain\n` +
+      `- Rumus matematika inline pakai $...$, rumus blok pakai $$...$$\n` +
       `- Jangan gunakan markdown selain pola di atas\n` +
       `- Jangan gunakan tabel\n` +
       `- Jangan sertakan penjelasan pembuka seperti "berikut adalah"\n` +

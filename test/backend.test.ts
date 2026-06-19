@@ -129,6 +129,14 @@ describe('backend utilities', () => {
     expect(containsTelegramHtml(htmlInput)).toBe(true);
     expect(renderTelegramMessageContent(htmlInput)).toBe(htmlInput);
     expect(renderTelegramMessageContent('**Halo**')).toContain('<b>Halo</b>');
+    expect(renderTelegramMessageContent('Buktikan $$\\sin^2 A + \\cos^2 A = 1$$')).toContain('<tg-math-block>\\sin^2 A + \\cos^2 A = 1</tg-math-block>');
+    expect(renderTelegramMessageContent('Nilai $x^2$ positif')).toContain('<tg-math>x^2</tg-math>');
+    expect(renderTelegramMessageContent('\\sin^2 A + \\cos^2 A = 1')).toContain('<tg-math-block>\\sin^2 A + \\cos^2 A = 1</tg-math-block>');
+    expect(renderTelegramMessageContent('sin A + cos A = 1')).toContain('<tg-math-block>\\sin A + \\cos A = 1</tg-math-block>');
+    expect(renderTelegramMessageContent('Hasilnya sqrt(x) + tan A')).toContain('<tg-math-block>Hasilnya \\sqrt{x} + \\tan A</tg-math-block>');
+    expect(renderTelegramMessageContent('$$tan A = sin A / cos A$$')).toContain('<tg-math-block>\\tan A = \\frac{\\sin A}{\\cos A}</tg-math-block>');
+    expect(renderTelegramMessageContent('$$sqrt(x) = a/b$$')).toContain('<tg-math-block>\\sqrt{x} = \\frac{a}{b}</tg-math-block>');
+    expect(renderTelegramMessageContent('Dokumentasi: https://example.com/a/b')).toContain('https://example.com/a/b');
   });
 
   test('admin config loads defaults, saves merge, and validates token', async () => {

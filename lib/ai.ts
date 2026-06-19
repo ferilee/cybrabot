@@ -92,6 +92,10 @@ Gunakan pola berikut bila relevan:
 - bullet diawali "- "
 - kutipan diawali "> "
 - blok kode memakai triple backticks
+Jika menulis rumus matematika, gunakan LaTeX yang rapi:
+- rumus inline pakai $...$
+- rumus baris tersendiri pakai $$...$$
+- contoh: $$\\sin^2 A + \\cos^2 A = 1$$
 JANGAN gunakan HTML mentah.
 
 PENTING: Jika ada yang bertanya siapa itu Feri Lee (atau Mas Feri), gunakan informasi berikut:
@@ -116,6 +120,15 @@ Gunakan pola berikut bila relevan:
 - bullet diawali "- "
 - kutipan diawali "> "
 - blok kode memakai triple backticks
+Jika ada rumus matematika atau notasi simbolik, tulis dalam LaTeX yang konsisten:
+- inline: $...$
+- baris rumus penuh: $$...$$
+- contoh: $$\\tan A = \\frac{\\sin A}{\\cos A}$$
+Untuk soal atau pembuktian matematika, susun jawaban dengan urutan:
+- konsep atau rumus yang dipakai
+- substitusi/perhitungan langkah demi langkah
+- kesimpulan atau jawaban akhir
+Letakkan rumus penting pada baris tersendiri. Jangan gabungkan beberapa langkah hitung dalam satu paragraf panjang.
 JANGAN gunakan HTML mentah.
 Jangan mengarang fakta spesifik yang tidak diketahui.`;
 
@@ -126,6 +139,8 @@ Gunakan format plain text terstruktur dengan aturan berikut:
 - Subjudul diawali "## "
 - Poin bullet diawali "- "
 - Paragraf biasa tanpa markup lain
+- Rumus matematika inline pakai $...$
+- Rumus blok pakai $$...$$
 - Jangan gunakan markdown selain pola di atas
 - Jangan gunakan tabel
 - Jangan sertakan penjelasan pembuka seperti "berikut adalah"
@@ -496,6 +511,8 @@ export async function generateSkillResponse(input: {
     `Boleh gunakan humor ringan jika cocok, tetapi jangan dipaksa.\n` +
     `Kalau konteksnya sederhana, cukup jawab singkat dan langsung. Tidak perlu terlalu formal.\n` +
     `Jangan tampilkan proses berpikir internal, catatan analisis, atau tag seperti <think>. Langsung berikan jawaban final untuk user.\n` +
+    `Kalau jawaban memuat rumus matematika, gunakan LaTeX yang konsisten: inline pakai $...$, dan rumus baris sendiri pakai $$...$$.\n` +
+    `Untuk pembuktian atau penyelesaian soal, pisahkan konsep, langkah perhitungan, dan jawaban akhir. Letakkan rumus penting pada baris tersendiri.\n` +
     `Skill aktif: ${input.skillTitle}\n\n` +
     `${input.skillInstructions}\n\n` +
     `Jika pengetahuan lokal tidak cukup, jelaskan asumsi dan jangan mengarang fakta spesifik.`;

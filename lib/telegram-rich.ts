@@ -5,17 +5,111 @@ export function escapeHtml(text: string) {
     .replace(/>/g, '&gt;');
 }
 
-function formatInlineTelegramRichText(input: string) {
-  const placeholders = new Map<string, string>();
-  let placeholderIndex = 0;
+type PlaceholderMap = Map<string, string>;
 
-  const stash = (html: string) => {
-    const key = `§§TGRICH${placeholderIndex++}§§`;
+function createPlaceholderStore() {
+  const placeholders: PlaceholderMap = new Map();
+  let index = 0;
+
+  const stash = (html: string, prefix = 'TGRICH') => {
+    const key = `§§${prefix}${index++}§§`;
     placeholders.set(key, html);
     return key;
   };
 
-  let text = escapeHtml(input);
+  return { placeholders, stash };
+}
+
+function restorePlaceholders(text: string, placeholders: PlaceholderMap) {
+  let restored = text;
+  for (const [key, value] of placeholders) {
+    restored = restored.replaceAll(key, value);
+  }
+  return restored;
+}
+
+function normalizeMathExpression(input: string) {
+  return input
+    .replace(/(?<!\\)\bsin(?=\s+[A-Za-z(]|\s*\\?[A-Za-z]|[([])/gi, '\\sin')
+    .replace(/(?<!\\)\bcos(?=\s+[A-Za-z(]|\s*\\?[A-Za-z]|[([])/gi, '\\cos')
+    .replace(/(?<!\\)\btan(?=\s+[A-Za-z(]|\s*\\?[A-Za-z]|[([])/gi, '\\tan')
+    .replace(/(?<!\\)\bcot(?=\s+[A-Za-z(]|\s*\\?[A-Za-z]|[([])/gi, '\\cot')
+    .replace(/(?<!\\)\bsec(?=\s+[A-Za-z(]|\s*\\?[A-Za-z]|[([])/gi, '\\sec')
+    .replace(/(?<!\\)\bcsc(?=\s+[A-Za-z(]|\s*\\?[A-Za-z]|[([])/gi, '\\csc')
+    .replace(/(?<!\\)\bsqrt\s*\(\s*([^)]+?)\s*\)/gi, '\\sqrt{$1}')
+    .replace(/\(([^()\n]+)\)\s*\/\s*\(([^()\n]+)\)/g, '\\frac{$1}{$2}')
+    .replace(
+      /(\\(?:sin|cos|tan|cot|sec|csc)\s+(?:[A-Za-z0-9]|\{[^}]+\}))\s*\/\s*(\\(?:sin|cos|tan|cot|sec|csc)\s+(?:[A-Za-z0-9]|\{[^}]+\}))/g,
+      '\\frac{$1}{$2}'
+    )
+    .replace(/\b([A-Za-z0-9]+(?:\^[A-Za-z0-9{}]+)?)\s*\/\s*([A-Za-z0-9]+(?:\^[A-Za-z0-9{}]+)?)\b/g, '\\frac{$1}{$2}');
+}
+
+function prepareMathPlaceholders(input: string) {
+  const { placeholders, stash } = createPlaceholderStore();
+  let text = input;
+
+  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) =>
+    stash(`<tg-math-block>${normalizeMathExpression(expr.trim())}</tg-math-block>`, 'TGMATH')
+  );
+  text = text.replace(/\\\[([\s\S]+?)\\\]/g, (_, expr) =>
+    stash(`<tg-math-block>${normalizeMathExpression(expr.trim())}</tg-math-block>`, 'TGMATH')
+  );
+  text = text.replace(/\\\((.+?)\\\)/g, (_, expr) =>
+    stash(`<tg-math>${normalizeMathExpression(expr.trim())}</tg-math>`, 'TGMATH')
+  );
+  text = text.replace(/(^|[^\$])\$([^\n$]+?)\$/g, (_, prefix, expr) =>
+    `${prefix}${stash(`<tg-math>${normalizeMathExpression(expr.trim())}</tg-math>`, 'TGMATH')}`
+  );
+
+  return { text, placeholders };
+}
+
+function normalizeStandaloneMathBlocks(input: string) {
+  return input
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return line;
+      }
+
+      if (
+        trimmed.includes('$$') ||
+        /\$[^$\n]+\$/.test(trimmed) ||
+        trimmed.includes('\\(') ||
+        trimmed.includes('\\[') ||
+        trimmed.includes('<tg-math') ||
+        /https?:\/\//i.test(trimmed) ||
+        /(?:^|\s)(?:\/[A-Za-z0-9._-]+){2,}/.test(trimmed) ||
+        trimmed.startsWith('#') ||
+        trimmed.startsWith('- ') ||
+        trimmed.startsWith('* ') ||
+        trimmed.startsWith('> ')
+      ) {
+        return line;
+      }
+
+      const normalizedMath = normalizeMathExpression(trimmed);
+      const looksLikeEquation =
+        normalizedMath.length <= 120 &&
+        /(=|\\frac|\\sin|\\cos|\\tan|\\sqrt|\^|_[{(]?)/
+          .test(normalizedMath) &&
+        !/[.!?]$/.test(normalizedMath);
+
+      if (!looksLikeEquation) {
+        return line;
+      }
+
+      return `$$${normalizedMath}$$`;
+    })
+    .join('\n');
+}
+
+function formatInlineTelegramRichText(input: string) {
+  const { placeholders, stash } = createPlaceholderStore();
+  const mathPrepared = prepareMathPlaceholders(input);
+  let text = escapeHtml(mathPrepared.text);
 
   text = text.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) =>
     stash(`<a href="${escapeHtml(url)}">${label}</a>`)
@@ -28,11 +122,7 @@ function formatInlineTelegramRichText(input: string) {
   text = text.replace(/_([^_\n][^_\n]*?[^_\n])_/g, '<i>$1</i>');
   text = text.replace(/~~([^~\n][\s\S]*?[^~\n])~~/g, '<s>$1</s>');
 
-  for (const [key, value] of placeholders) {
-    text = text.replaceAll(key, value);
-  }
-
-  return text;
+  return restorePlaceholders(restorePlaceholders(text, placeholders), mathPrepared.placeholders);
 }
 
 export function formatTelegramRichCard(input: {
@@ -98,7 +188,8 @@ function flushParagraph(lines: string[], output: string[]) {
 }
 
 export function formatTelegramRichText(input: string) {
-  const normalized = input.replace(/\r\n/g, '\n').trim();
+  const preparedMath = prepareMathPlaceholders(input.replace(/\r\n/g, '\n'));
+  const normalized = preparedMath.text.trim();
   if (!normalized) {
     return '';
   }
@@ -208,7 +299,7 @@ export function formatTelegramRichText(input: string) {
 
   flushAll();
 
-  return output.join('\n\n');
+  return restorePlaceholders(output.join('\n\n'), preparedMath.placeholders);
 }
 
 export function containsTelegramHtml(input: string) {
@@ -216,13 +307,14 @@ export function containsTelegramHtml(input: string) {
 }
 
 export function renderTelegramMessageContent(input: string) {
-  const normalized = input.replace(/\r\n/g, '\n').trim();
+  const normalized = normalizeStandaloneMathBlocks(input.replace(/\r\n/g, '\n')).trim();
   if (!normalized) {
     return '';
   }
 
   if (containsTelegramHtml(normalized)) {
-    return normalized;
+    const preparedMath = prepareMathPlaceholders(normalized);
+    return restorePlaceholders(preparedMath.text, preparedMath.placeholders);
   }
 
   return formatTelegramRichText(normalized);
