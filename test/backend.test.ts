@@ -168,6 +168,9 @@ describe('backend utilities', () => {
     const docxRequest = detectDocumentExportRequest('Tolong bikin word laporan kegiatan');
     expect(docxRequest?.format).toBe('docx');
 
+    const mdRequest = detectDocumentExportRequest('Export markdown ringkasan kondisi indonesia');
+    expect(mdRequest?.format).toBe('md');
+
     const content = '# Laporan\n\n## Isi\n- Poin satu\nParagraf penutup';
     const pdfBuffer = await createPdfDocument('Laporan', content);
     expect(Buffer.from(pdfBuffer).subarray(0, 4).toString()).toBe('%PDF');
@@ -179,6 +182,10 @@ describe('backend utilities', () => {
     expect(existsSync(materialized.outputPath)).toBe(true);
     cleanupExportFile(materialized.outputPath);
     expect(existsSync(materialized.outputPath)).toBe(false);
+
+    const markdownFile = await materializeExportFile('Laporan', content, 'md');
+    expect(await Bun.file(markdownFile.outputPath).text()).toContain('# Laporan');
+    cleanupExportFile(markdownFile.outputPath);
   });
 
   test('humanis markdown export detection and file materialization work', async () => {

@@ -17,7 +17,7 @@ import {
 const EXPORT_DIR = '/tmp/cybrabot-exports';
 mkdirSync(EXPORT_DIR, { recursive: true });
 
-export type ExportFormat = 'pdf' | 'docx';
+export type ExportFormat = 'md' | 'pdf' | 'docx';
 
 export type ExportRequest = {
   format: ExportFormat;
@@ -33,18 +33,21 @@ type ParsedLine =
 
 export function detectDocumentExportRequest(text: string): ExportRequest | null {
   const lower = text.toLowerCase();
+  const wantsMd = /\bmarkdown\b|\bmd\b/.test(lower);
   const wantsPdf = /\bpdf\b/.test(lower);
   const wantsDocx = /\bdocx\b|\bword\b/.test(lower);
   const asksToCreate = /(buatkan|bikinkan|generate|buat|tolong buat|tolong bikin|jadikan|ubah jadi|convert|ekspor|export)/.test(lower);
 
-  if (!asksToCreate || (!wantsPdf && !wantsDocx)) {
+  if (!asksToCreate || (!wantsMd && !wantsPdf && !wantsDocx)) {
     return null;
   }
 
-  const format: ExportFormat = wantsPdf ? 'pdf' : 'docx';
+  const format: ExportFormat = wantsMd ? 'md' : wantsPdf ? 'pdf' : 'docx';
   const cleanedPrompt = text
     .replace(/\/?[a-z]*dokumen(@\w+)?/gi, '')
     .replace(/\b(format|dalam bentuk|sebagai)\b/gi, '')
+    .replace(/\bmarkdown\b/gi, '')
+    .replace(/\bmd\b/gi, '')
     .replace(/\bpdf\b/gi, '')
     .replace(/\bdocx\b/gi, '')
     .replace(/\bword\b/gi, '')
@@ -210,9 +213,12 @@ export async function createPdfDocument(title: string, content: string) {
 export async function materializeExportFile(title: string, content: string, format: ExportFormat) {
   const fileName = `${slugify(title)}.${format}`;
   const outputPath = join(EXPORT_DIR, `${Date.now()}-${crypto.randomUUID()}-${fileName}`);
-  const buffer = format === 'pdf'
-    ? await createPdfDocument(title, content)
-    : await createDocxDocument(title, content);
+  const buffer =
+    format === 'md'
+      ? Buffer.from(content, 'utf-8')
+      : format === 'pdf'
+        ? await createPdfDocument(title, content)
+        : await createDocxDocument(title, content);
 
   await Bun.write(outputPath, buffer);
 

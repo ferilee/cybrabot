@@ -534,6 +534,19 @@ function stripHtmlMarkup(text: string) {
   return text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 }
 
+async function getLatestBotMessage(userId: number) {
+  return db.query.messages.findFirst({
+    where: eq(messages.userId, userId),
+    orderBy: [desc(messages.timestamp), desc(messages.id)],
+    columns: {
+      id: true,
+      content: true,
+      role: true,
+      intent: true,
+    },
+  });
+}
+
 function shouldExportConversationContent(text: string) {
   const lower = text.toLowerCase();
   return (
@@ -825,6 +838,62 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
   }
 }
 
+async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx', titleOverride?: string) {
+  const startedAt = Date.now();
+  const userId = ctx.from.id;
+  const latestBotMessage = await getLatestBotMessage(userId);
+
+  if (!latestBotMessage || latestBotMessage.role !== 'bot' || !latestBotMessage.content?.trim()) {
+    await replySafely(
+      ctx,
+      'Belum ada jawaban bot yang bisa diekspor. Kirim pertanyaan dulu, lalu pakai <b>/simpan md</b>, <b>/simpan pdf</b>, atau <b>/simpan docx</b>.'
+    );
+    return;
+  }
+
+  const content = latestBotMessage.content.trim();
+  const title = titleOverride?.trim() || 'Jawaban CybraFeriBot';
+  let outputPath = '';
+
+  try {
+    const exported = await materializeExportFile(title, content, format);
+    outputPath = exported.outputPath;
+
+    await ctx.replyWithDocument(exported.inputFile, {
+      caption:
+        `Berikut file <b>${format.toUpperCase()}</b> dari jawaban terakhir Cybra.\n` +
+        `<b>Judul:</b> ${title}`,
+      parse_mode: 'HTML',
+    });
+
+    await logEvent('document.exported', {
+      userId,
+      format,
+      title,
+      source: 'latest_bot_answer',
+    });
+
+    await logEvent('message.completed', {
+      userId,
+      route: `latest_answer_export_${format}`,
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (error) {
+    await logEvent('message.failed', {
+      userId,
+      chatId: ctx.chat.id,
+      feature: 'latest_answer_export',
+      error: String(error),
+      durationMs: Date.now() - startedAt,
+    }, 'error');
+    await replySafely(ctx, 'Maaf, saya belum berhasil mengekspor jawaban terakhir ke file.');
+  } finally {
+    if (outputPath) {
+      cleanupExportFile(outputPath);
+    }
+  }
+}
+
 async function getConversationHistory(userId: number): Promise<ChatHistoryItem[]> {
   const recentMessages = await db.query.messages.findMany({
     where: eq(messages.userId, userId),
@@ -921,7 +990,7 @@ async function handleExplicitSkillCommand(
 
   await db.insert(messages).values({
     userId,
-    content: telegramReply,
+    content: response.reply,
     role: 'bot',
     intent: response.skill?.id || options.requestedSkillId,
   });
@@ -1045,6 +1114,28 @@ bot.command('dokumen_kirim', async (ctx) => {
   }
 
   await sendActiveDocumentFile(ctx);
+});
+
+bot.command('simpan', async (ctx) => {
+  if (!shouldHandleGroupCommand(ctx)) {
+    return;
+  }
+
+  const raw = ctx.message!.text.replace(/^\/simpan(@\w+)?/i, '').trim();
+  const [formatRaw, ...titleParts] = raw.split(/\s+/);
+  const format = (formatRaw || '').toLowerCase() as 'md' | 'pdf' | 'docx';
+  const title = titleParts.join(' ').trim();
+
+  if (!format || !['md', 'pdf', 'docx'].includes(format)) {
+    await replySafely(
+      ctx,
+      'Format: <b>/simpan [md|pdf|docx] [judul opsional]</b>\n' +
+      'Contoh: <b>/simpan pdf kondisi-indonesia</b>'
+    );
+    return;
+  }
+
+  await exportLatestBotAnswer(ctx, format, title);
 });
 
 bot.command('grill', async (ctx) => {
@@ -1567,7 +1658,7 @@ bot.on('message:text', async (ctx) => {
 
     await db.insert(messages).values({
       userId,
-      content: telegramReply,
+      content: response.reply,
       role: 'bot',
       intent: response.skill?.id || response.intent,
     });
