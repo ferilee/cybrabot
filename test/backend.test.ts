@@ -497,6 +497,7 @@ describe('skill and web chat routing', () => {
 describe('api endpoints', () => {
   test('web pages and chat service enforce session roles', async () => {
     const root = await app.request('/');
+    const login = await app.request('/login');
     const health = await app.request('/health');
     const guestChat = await app.request('/chat');
     const guestDashboard = await app.request('/dashboard');
@@ -513,6 +514,11 @@ describe('api endpoints', () => {
 
     expect(root.status).toBe(302);
     expect(root.headers.get('location')).toBe('/login');
+    expect(login.status).toBe(200);
+    const loginHtml = await login.text();
+    expect(loginHtml).toContain('/assets/cybrabot-logo.png');
+    expect(loginHtml).toContain('Dibuat dengan ❤️ oleh Ferilee, 2026');
+    expect(loginHtml).not.toContain('Akses web chat tersedia untuk semua akun Google yang valid.');
     expect(guestChat.status).toBe(302);
     expect(guestDashboard.status).toBe(302);
     expect(guestSkills.status).toBe(401);
@@ -537,6 +543,16 @@ describe('api endpoints', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/markdown');
     expect(await response.text()).toContain('# Halo');
+  });
+
+  test('asset endpoints serve login logo and favicon', async () => {
+    const logo = await app.request('/assets/cybrabot-logo.png');
+    const favicon = await app.request('/favicon.ico');
+
+    expect(logo.status).toBe(200);
+    expect(logo.headers.get('content-type')).toContain('image/png');
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers.get('content-type')).toContain('image/x-icon');
   });
 
   test('api chat validates body and serves tool responses', async () => {

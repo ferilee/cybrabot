@@ -101,6 +101,22 @@ function parseTelemetryPayload(payload: string | null) {
   }
 }
 
+function getAssetPath(fileName: string) {
+  const allowedAssets = new Map([
+    ['cybrabot-logo.png', '/home/ferilee/DEV/cybraferibot/assets/cybrabot-logo.png'],
+    ['favicon.png', '/home/ferilee/DEV/cybraferibot/assets/favicon.png'],
+    ['favicon.ico', '/home/ferilee/DEV/cybraferibot/assets/favicon.ico'],
+  ]);
+
+  return allowedAssets.get(fileName) || null;
+}
+
+function getAssetContentType(fileName: string) {
+  if (fileName.endsWith('.png')) return 'image/png';
+  if (fileName.endsWith('.ico')) return 'image/x-icon';
+  return 'application/octet-stream';
+}
+
 function buildTelemetrySummaries(items: typeof telemetryEvents.$inferSelect[]) {
   const parsedTelemetry = items.map((item) => ({
     item,
@@ -265,6 +281,9 @@ function renderLoginPage(options: {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Login | CybraFeriBot</title>
+      <link rel="icon" type="image/png" href="/assets/favicon.png">
+      <link rel="icon" type="image/x-icon" href="/favicon.ico">
+      <link rel="apple-touch-icon" href="/assets/favicon.png">
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
       <style>
         :root {
@@ -310,6 +329,13 @@ function renderLoginPage(options: {
           margin: 10px 0 8px;
           font-size: 34px;
           line-height: 1.05;
+        }
+        .hero-logo {
+          display: block;
+          width: min(220px, 62vw);
+          height: auto;
+          margin: 16px auto 12px;
+          filter: drop-shadow(0 18px 34px rgba(14, 165, 233, 0.18));
         }
         p {
           margin: 0;
@@ -362,10 +388,7 @@ function renderLoginPage(options: {
       <main class="panel">
         <div class="eyebrow">CybraFeriBot</div>
         <h1>Masuk dengan Google</h1>
-        <p>
-          Akses web chat tersedia untuk semua akun Google yang valid.
-          Akun admin <strong>${escapeHtml('the.real.ferilee@gmail.com')}</strong> akan otomatis mendapat akses dashboard dan admin.
-        </p>
+        <img class="hero-logo" src="/assets/cybrabot-logo.png" alt="CybraFeriBot logo">
         ${options.error ? `<div class="status">${escapeHtml(options.error)}</div>` : ''}
         ${!options.configured ? '<div class="status">Google OAuth belum dikonfigurasi. Isi GOOGLE_CLIENT_ID dan GOOGLE_CLIENT_SECRET terlebih dahulu.</div>' : ''}
         <div class="actions">
@@ -374,7 +397,7 @@ function renderLoginPage(options: {
             <span>Lanjutkan ke aplikasi</span>
           </a>
         </div>
-        <div class="footer">Setelah login, visitor hanya bisa membuka web chat. Admin bisa membuka chat, dashboard, dan admin.</div>
+        <div class="footer">Dibuat dengan ❤️ oleh Ferilee, 2026</div>
       </main>
     </body>
     </html>
@@ -389,6 +412,8 @@ function renderAdminPage(session: WebSession) {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>CybraFeriBot Admin</title>
+      <link rel="icon" type="image/png" href="/assets/favicon.png">
+      <link rel="icon" type="image/x-icon" href="/favicon.ico">
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
       <style>
         :root {
@@ -996,6 +1021,8 @@ function renderWebChatPage(session: WebSession) {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <meta name="theme-color" content="#17456f">
       <title>CybraFeriBot Web Chat</title>
+      <link rel="icon" type="image/png" href="/assets/favicon.png">
+      <link rel="icon" type="image/x-icon" href="/favicon.ico">
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -2184,6 +2211,8 @@ app.get('/dashboard', async (c) => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>CybraFeriBot Dashboard</title>
+        <link rel="icon" type="image/png" href="/assets/favicon.png">
+        <link rel="icon" type="image/x-icon" href="/favicon.ico">
         <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
         <style>
             :root {
@@ -2430,6 +2459,31 @@ app.get('/auth/google/callback', async (c) => {
 app.get('/logout', (c) => {
   clearWebSession(c);
   return c.redirect('/login');
+});
+
+app.get('/favicon.ico', async (c) => {
+  const filePath = getAssetPath('favicon.ico');
+  if (!filePath) {
+    return c.text('Not Found', 404);
+  }
+
+  return c.body(await Bun.file(filePath).bytes(), 200, {
+    'content-type': getAssetContentType('favicon.ico'),
+    'cache-control': 'public, max-age=604800, immutable',
+  });
+});
+
+app.get('/assets/:fileName', async (c) => {
+  const fileName = c.req.param('fileName');
+  const filePath = getAssetPath(fileName);
+  if (!filePath) {
+    return c.text('Not Found', 404);
+  }
+
+  return c.body(await Bun.file(filePath).bytes(), 200, {
+    'content-type': getAssetContentType(fileName),
+    'cache-control': 'public, max-age=604800, immutable',
+  });
 });
 
 app.get('/admin', async (c) => {
