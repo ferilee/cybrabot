@@ -8,7 +8,9 @@ RUN bun install --frozen-lockfile
 COPY api ./api
 COPY bot ./bot
 COPY db ./db
+COPY knowledge ./knowledge
 COPY lib ./lib
+COPY skills ./skills
 COPY drizzle.config.ts ./
 COPY index.ts ./
 COPY tsconfig.json ./
