@@ -407,6 +407,38 @@ export function containsTelegramHtml(input: string) {
   return /<\/?(b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote|a|ul|ol|li|p|h[1-6]|table|tr|th|td|footer|hr|tg-math|tg-math-block|tg-reference|tg-spoiler)\b[^>]*>/i.test(input);
 }
 
+export function simplifyTelegramRichContent(input: string) {
+  const normalized = input.replace(/\r\n/g, '\n').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  let simplified = normalized
+    .replace(/<h[1-6]>([\s\S]*?)<\/h[1-6]>/gi, '<b>$1</b>\n')
+    .replace(/<p>([\s\S]*?)<\/p>/gi, '$1\n')
+    .replace(/<blockquote>([\s\S]*?)<\/blockquote>/gi, '<i>$1</i>\n')
+    .replace(/<(?:ul|ol)>\s*/gi, '')
+    .replace(/\s*<\/(?:ul|ol)>/gi, '\n')
+    .replace(/<li>([\s\S]*?)<\/li>/gi, '• $1\n')
+    .replace(/<table\b[^>]*>/gi, '\n')
+    .replace(/<\/table>/gi, '\n')
+    .replace(/<tr>([\s\S]*?)<\/tr>/gi, (_, row) => {
+      const cells = [...row.matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((match) => match[1]?.trim() || '');
+      return cells.length ? `${cells.join(' | ')}\n` : '';
+    })
+    .replace(/<(?:thead|tbody|tfoot)>/gi, '')
+    .replace(/<\/(?:thead|tbody|tfoot)>/gi, '\n')
+    .replace(/<hr\s*\/?>/gi, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (!containsTelegramHtml(simplified)) {
+    return formatTelegramRichText(simplified);
+  }
+
+  return simplified;
+}
+
 export function renderTelegramMessageContent(input: string) {
   const normalized = normalizeStandaloneMathBlocks(input.replace(/\r\n/g, '\n')).trim();
   if (!normalized) {

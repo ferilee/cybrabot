@@ -16,7 +16,7 @@ import {
   saveUserPreferences,
 } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
-import { containsTelegramHtml, escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent } from '../lib/telegram-rich';
+import { containsTelegramHtml, escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
 import { renderResponseTemplate } from '../lib/runtime-responses';
 import { getWebSkill, loadWebSkills, selectWebSkill } from '../lib/web-skills';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
@@ -156,6 +156,12 @@ describe('backend utilities', () => {
     expect(renderTelegramMessageContent('| A | B |\n| --- | ---: |\n| 1 | 2 |')).toContain('<table bordered striped>');
     expect(renderTelegramMessageContent('| A | B |\n| --- | ---: |\n| 1 | 2 |')).toContain('<th align="left">A</th>');
     expect(renderTelegramMessageContent('| A | B |\n| --- | ---: |\n| 1 | 2 |')).toContain('<td align="right">2</td>');
+
+    const simplified = simplifyTelegramRichContent('<h1>Judul</h1><p>Nilai <tg-math>x^2</tg-math></p><table bordered striped><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>');
+    expect(simplified).toContain('<b>Judul</b>');
+    expect(simplified).toContain('<tg-math>x^2</tg-math>');
+    expect(simplified).toContain('A | B');
+    expect(simplified).not.toContain('<table');
   });
 
   test('admin config loads defaults, saves merge, and validates token', async () => {

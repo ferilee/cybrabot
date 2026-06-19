@@ -18,7 +18,7 @@ import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreference
 import { getRuntimeResponse } from '../lib/runtime-responses';
 import { runSkillChat } from '../lib/skill-chat';
 import { runLocalTool } from '../lib/tools';
-import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent } from '../lib/telegram-rich';
+import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -186,6 +186,20 @@ async function sendRichTelegramMessage(ctx: any, text: string) {
   return ctx.api.callApi('sendRichMessage', payload as any);
 }
 
+function shouldFallbackFromRichMessage(error: any) {
+  const description = error?.description || error?.message || '';
+  return (
+    description.includes("can't parse entities") ||
+    description.includes('sendRichMessage') ||
+    description.includes('message is too long') ||
+    description.includes('Bad Request')
+  );
+}
+
+function stringifyTelegramError(error: any) {
+  return error?.description || error?.message || String(error);
+}
+
 async function replySafely(ctx: any, text: string) {
   const renderedText = renderTelegramMessageContent(text);
   const limitedText = limitRichTelegramMessage(renderedText);
@@ -193,21 +207,43 @@ async function replySafely(ctx: any, text: string) {
   try {
     await sendRichTelegramMessage(ctx, limitedText);
   } catch (error: any) {
-    const description = error?.description || error?.message || '';
-    const isParseError =
-      description.includes("can't parse entities") ||
-      description.includes('sendRichMessage') ||
-      description.includes('message is too long') ||
-      description.includes('Bad Request');
+    await logEvent('telegram.rich_message_primary_failed', {
+      chatId: ctx?.chat?.id ?? null,
+      messageId: ctx?.message?.message_id ?? null,
+      error: stringifyTelegramError(error),
+    }, 'warn');
 
-    if (!isParseError) {
+    if (!shouldFallbackFromRichMessage(error)) {
       throw error;
     }
 
-    const plainText = limitTelegramMessage(limitedText.replace(/<[^>]+>/g, ''));
+    const simplifiedText = limitRichTelegramMessage(simplifyTelegramRichContent(limitedText));
+    if (simplifiedText && simplifiedText !== limitedText) {
+      try {
+        await sendRichTelegramMessage(ctx, simplifiedText);
+        return;
+      } catch (secondaryError: any) {
+        await logEvent('telegram.rich_message_secondary_failed', {
+          chatId: ctx?.chat?.id ?? null,
+          messageId: ctx?.message?.message_id ?? null,
+          error: stringifyTelegramError(secondaryError),
+        }, 'warn');
+
+        if (!shouldFallbackFromRichMessage(secondaryError)) {
+          throw secondaryError;
+        }
+      }
+    }
+
+    const plainText = limitTelegramMessage(simplifiedText.replace(/<[^>]+>/g, ''));
     try {
       await ctx.reply(plainText, { parse_mode: 'HTML' });
-    } catch {
+    } catch (plainError: any) {
+      await logEvent('telegram.plain_reply_html_failed', {
+        chatId: ctx?.chat?.id ?? null,
+        messageId: ctx?.message?.message_id ?? null,
+        error: stringifyTelegramError(plainError),
+      }, 'warn');
       await ctx.reply(plainText);
     }
   }
