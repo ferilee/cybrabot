@@ -131,7 +131,7 @@ describe('backend utilities', () => {
       fields: [{ label: 'A', value: 'B' }],
       bodyHtml: formatTelegramRichText('# Halo\n- satu\n```ts\nconst a = 1;\n```'),
     });
-    expect(rich).toContain('<b>Halo</b>');
+    expect(rich).toContain('<h1>Halo</h1>');
     expect(rich).toContain('<ul><li>satu</li></ul>');
     expect(rich).toContain('<pre><code>');
 
@@ -153,6 +153,9 @@ describe('backend utilities', () => {
     expect(renderTelegramMessageContent('$$tan A = sin A / cos A$$')).toContain('<tg-math-block>\\tan A = \\frac{\\sin A}{\\cos A}</tg-math-block>');
     expect(renderTelegramMessageContent('$$sqrt(x) = a/b$$')).toContain('<tg-math-block>\\sqrt{x} = \\frac{a}{b}</tg-math-block>');
     expect(renderTelegramMessageContent('Dokumentasi: https://example.com/a/b')).toContain('https://example.com/a/b');
+    expect(renderTelegramMessageContent('| A | B |\n| --- | ---: |\n| 1 | 2 |')).toContain('<table bordered striped>');
+    expect(renderTelegramMessageContent('| A | B |\n| --- | ---: |\n| 1 | 2 |')).toContain('<th align="left">A</th>');
+    expect(renderTelegramMessageContent('| A | B |\n| --- | ---: |\n| 1 | 2 |')).toContain('<td align="right">2</td>');
   });
 
   test('admin config loads defaults, saves merge, and validates token', async () => {

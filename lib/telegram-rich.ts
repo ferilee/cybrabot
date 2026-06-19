@@ -125,6 +125,73 @@ function formatInlineTelegramRichText(input: string) {
   return restorePlaceholders(restorePlaceholders(text, placeholders), mathPrepared.placeholders);
 }
 
+function parseMarkdownTableRow(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|')) {
+    return null;
+  }
+
+  const normalized = trimmed.replace(/^\|/, '').replace(/\|$/, '');
+  const cells = normalized.split('|').map((cell) => cell.trim());
+  if (cells.length < 2) {
+    return null;
+  }
+
+  return cells;
+}
+
+function parseMarkdownTableDivider(line: string, expectedColumns: number) {
+  const cells = parseMarkdownTableRow(line);
+  if (!cells || cells.length !== expectedColumns) {
+    return null;
+  }
+
+  const alignments = cells.map((cell) => {
+    if (!/^:?-{3,}:?$/.test(cell)) {
+      return null;
+    }
+
+    const starts = cell.startsWith(':');
+    const ends = cell.endsWith(':');
+    if (starts && ends) return 'center';
+    if (ends) return 'right';
+    return 'left';
+  });
+
+  return alignments.every(Boolean) ? alignments as Array<'left' | 'center' | 'right'> : null;
+}
+
+function renderMarkdownTable(lines: string[]) {
+  if (lines.length < 2) {
+    return null;
+  }
+
+  const header = parseMarkdownTableRow(lines[0] || '');
+  if (!header) {
+    return null;
+  }
+
+  const alignments = parseMarkdownTableDivider(lines[1] || '', header.length);
+  if (!alignments) {
+    return null;
+  }
+
+  const bodyRows = lines.slice(2).map((line) => parseMarkdownTableRow(line)).filter((row): row is string[] => Boolean(row));
+  if (bodyRows.some((row) => row.length !== header.length)) {
+    return null;
+  }
+
+  const headerHtml = header
+    .map((cell, index) => `<th align="${alignments[index]}">${formatInlineTelegramRichText(cell)}</th>`)
+    .join('');
+
+  const bodyHtml = bodyRows
+    .map((row) => `<tr>${row.map((cell, index) => `<td align="${alignments[index]}">${formatInlineTelegramRichText(cell)}</td>`).join('')}</tr>`)
+    .join('');
+
+  return `<table bordered striped><tr>${headerHtml}</tr>${bodyHtml}</table>`;
+}
+
 export function formatTelegramRichCard(input: {
   title: string;
   subtitle?: string;
@@ -181,7 +248,7 @@ function flushParagraph(lines: string[], output: string[]) {
     .join(' ');
 
   if (content) {
-    output.push(content);
+    output.push(`<p>${content}</p>`);
   }
 
   lines.length = 0;
@@ -199,6 +266,7 @@ export function formatTelegramRichText(input: string) {
   const quoteLines: string[] = [];
   const listItems: { ordered: boolean; items: string[] } = { ordered: false, items: [] };
   const codeLines: string[] = [];
+  const tableLines: string[] = [];
 
   let inCode = false;
 
@@ -220,6 +288,20 @@ export function formatTelegramRichText(input: string) {
     listItems.ordered = false;
   };
 
+  const flushTable = () => {
+    if (!tableLines.length) {
+      return;
+    }
+
+    const tableHtml = renderMarkdownTable(tableLines);
+    if (tableHtml) {
+      output.push(tableHtml);
+    } else {
+      flushParagraph(tableLines, output);
+    }
+    tableLines.length = 0;
+  };
+
   const flushCode = () => {
     if (!codeLines.length) {
       return;
@@ -232,10 +314,13 @@ export function formatTelegramRichText(input: string) {
     flushParagraph(paragraphLines, output);
     flushQuote();
     flushList();
+    flushTable();
     flushCode();
   };
 
-  for (const rawLine of normalized.split('\n')) {
+  const lines = normalized.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const rawLine = lines[i] || '';
     const line = rawLine.trimEnd();
     const trimmed = line.trim();
 
@@ -260,10 +345,26 @@ export function formatTelegramRichText(input: string) {
       continue;
     }
 
+    const currentRow = parseMarkdownTableRow(trimmed);
+    const nextRow = parseMarkdownTableDivider(lines[i + 1]?.trim() || '', currentRow?.length || 0);
+    if (tableLines.length || (currentRow && nextRow)) {
+      flushParagraph(paragraphLines, output);
+      flushQuote();
+      flushList();
+
+      if (currentRow) {
+        tableLines.push(trimmed);
+        continue;
+      }
+
+      flushTable();
+    }
+
     const heading = trimmed.match(/^#{1,3}\s+(.*)$/);
     if (heading?.[1]) {
       flushAll();
-      output.push(`<b>${formatInlineTelegramRichText(heading[1])}</b>`);
+      const level = Math.min(4, Math.max(1, trimmed.match(/^#+/)?.[0].length || 1));
+      output.push(`<h${level}>${formatInlineTelegramRichText(heading[1])}</h${level}>`);
       continue;
     }
 
@@ -303,7 +404,7 @@ export function formatTelegramRichText(input: string) {
 }
 
 export function containsTelegramHtml(input: string) {
-  return /<\/?(b|strong|i|em|u|s|code|pre|blockquote|a|ul|ol|li)\b[^>]*>/i.test(input);
+  return /<\/?(b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote|a|ul|ol|li|p|h[1-6]|table|tr|th|td|footer|hr|tg-math|tg-math-block|tg-reference|tg-spoiler)\b[^>]*>/i.test(input);
 }
 
 export function renderTelegramMessageContent(input: string) {
