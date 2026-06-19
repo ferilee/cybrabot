@@ -1142,6 +1142,30 @@ function renderWebChatPage() {
           font-size: 0.9em;
         }
         .message-row.user .message-content code { background: rgba(16,35,51,0.09); }
+        .message-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 12px;
+        }
+        .download-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 9px 13px;
+          border-radius: 999px;
+          color: #eff8ff;
+          text-decoration: none;
+          font-size: 12px;
+          font-weight: 600;
+          background: linear-gradient(145deg, rgba(47, 117, 172, 0.92), rgba(20, 58, 92, 0.96));
+          box-shadow: 0 8px 18px rgba(8, 25, 41, 0.28);
+          transition: 160ms ease;
+        }
+        .download-link:hover {
+          transform: translateY(-1px);
+          filter: brightness(1.04);
+        }
         .message-tags {
           display: flex;
           flex-wrap: wrap;
@@ -1420,6 +1444,21 @@ function renderWebChatPage() {
           return tags.length ? '<div class="message-tags">' + tags.join('') + '</div>' : '';
         }
 
+        function renderMessageActions(meta = {}) {
+          if (!meta.exportFile || !meta.exportFile.downloadUrl) {
+            return '';
+          }
+
+          const label = meta.exportFile.format
+            ? 'Unduh ' + String(meta.exportFile.format).toUpperCase()
+            : 'Unduh File';
+
+          return '<div class="message-actions">' +
+            '<a class="download-link" href="' + escapeHtml(meta.exportFile.downloadUrl) + '" download="' + escapeHtml(meta.exportFile.fileName || '') + '">' +
+            '<span>⬇</span><span>' + escapeHtml(label) + '</span>' +
+            '</a></div>';
+        }
+
         function addMessage(role, content, meta = {}) {
           if (welcome) welcome.hidden = true;
           document.getElementById('typingMessage')?.remove();
@@ -1439,7 +1478,8 @@ function renderWebChatPage() {
           bubble.innerHTML =
             '<div class="message-meta"><strong>' + label + '</strong><span>' + escapeHtml(time) + '</span>' +
             (detail ? '<span>· ' + escapeHtml(detail) + '</span>' : '') +
-            '</div><div class="message-content">' + renderMarkdownLite(content) + '</div>' + renderMetaTags(meta);
+            '</div><div class="message-content">' + renderMarkdownLite(content) + '</div>' +
+            renderMessageActions(meta) + renderMetaTags(meta);
           row.append(avatar, bubble);
           messages.appendChild(row);
           messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
@@ -1548,6 +1588,7 @@ function renderWebChatPage() {
               intentModel: data.intentModel,
               model: data.model,
               fallback: data.fallback,
+              exportFile: data.exportFile,
             });
             updateHeaderMeta({
               skillTitle: data.skill?.title,

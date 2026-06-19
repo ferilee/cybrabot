@@ -5,6 +5,36 @@ export function escapeHtml(text: string) {
     .replace(/>/g, '&gt;');
 }
 
+function formatInlineTelegramRichText(input: string) {
+  const placeholders = new Map<string, string>();
+  let placeholderIndex = 0;
+
+  const stash = (html: string) => {
+    const key = `§§TGRICH${placeholderIndex++}§§`;
+    placeholders.set(key, html);
+    return key;
+  };
+
+  let text = escapeHtml(input);
+
+  text = text.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) =>
+    stash(`<a href="${escapeHtml(url)}">${label}</a>`)
+  );
+
+  text = text.replace(/`([^`\n]+)`/g, (_, code) => stash(`<code>${code}</code>`));
+  text = text.replace(/\*\*([^*\n][\s\S]*?[^*\n])\*\*/g, '<b>$1</b>');
+  text = text.replace(/__([^_\n][\s\S]*?[^_\n])__/g, '<b>$1</b>');
+  text = text.replace(/\*([^*\n][^*\n]*?[^*\n])\*/g, '<i>$1</i>');
+  text = text.replace(/_([^_\n][^_\n]*?[^_\n])_/g, '<i>$1</i>');
+  text = text.replace(/~~([^~\n][\s\S]*?[^~\n])~~/g, '<s>$1</s>');
+
+  for (const [key, value] of placeholders) {
+    text = text.replaceAll(key, value);
+  }
+
+  return text;
+}
+
 export function formatTelegramRichCard(input: {
   title: string;
   subtitle?: string;
@@ -57,7 +87,7 @@ function flushParagraph(lines: string[], output: string[]) {
   }
 
   const content = lines
-    .map((line) => escapeHtml(line.trim()))
+    .map((line) => formatInlineTelegramRichText(line.trim()))
     .join(' ');
 
   if (content) {
@@ -85,7 +115,7 @@ export function formatTelegramRichText(input: string) {
     if (!quoteLines.length) {
       return;
     }
-    output.push(`<blockquote>${quoteLines.map((line) => escapeHtml(line.trim())).join('\n')}</blockquote>`);
+    output.push(`<blockquote>${quoteLines.map((line) => formatInlineTelegramRichText(line.trim())).join('\n')}</blockquote>`);
     quoteLines.length = 0;
   };
 
@@ -94,7 +124,7 @@ export function formatTelegramRichText(input: string) {
       return;
     }
     const tag = listItems.ordered ? 'ol' : 'ul';
-    output.push(`<${tag}>${listItems.items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</${tag}>`);
+    output.push(`<${tag}>${listItems.items.map((item) => `<li>${formatInlineTelegramRichText(item)}</li>`).join('')}</${tag}>`);
     listItems.items.length = 0;
     listItems.ordered = false;
   };
@@ -142,7 +172,7 @@ export function formatTelegramRichText(input: string) {
     const heading = trimmed.match(/^#{1,3}\s+(.*)$/);
     if (heading?.[1]) {
       flushAll();
-      output.push(`<b>${escapeHtml(heading[1])}</b>`);
+      output.push(`<b>${formatInlineTelegramRichText(heading[1])}</b>`);
       continue;
     }
 

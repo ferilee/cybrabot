@@ -116,6 +116,12 @@ describe('backend utilities', () => {
     expect(rich).toContain('<b>Halo</b>');
     expect(rich).toContain('<ul><li>satu</li></ul>');
     expect(rich).toContain('<pre><code>');
+
+    const inline = formatTelegramRichText('Halo **tebal** lalu *miring* dan `kode` [link](https://example.com)');
+    expect(inline).toContain('<b>tebal</b>');
+    expect(inline).toContain('<i>miring</i>');
+    expect(inline).toContain('<code>kode</code>');
+    expect(inline).toContain('<a href="https://example.com">link</a>');
   });
 
   test('admin config loads defaults, saves merge, and validates token', async () => {

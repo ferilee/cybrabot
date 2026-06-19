@@ -33,8 +33,48 @@ const DOCUMENT_DOWNLOAD_DIR = '/tmp/cybrabot-documents';
 const MAX_DOCUMENT_BYTES = Number(process.env.DOCUMENT_MAX_BYTES || 20 * 1024 * 1024);
 const GROUP_ALLOWED_USER_ID = Number(process.env.GROUP_ALLOWED_USER_ID || 177517779);
 const GROUP_ALLOWED_USERNAME = (process.env.GROUP_ALLOWED_USERNAME || 'ferilee').toLowerCase();
+const PROCESSED_UPDATE_TTL_MS = 10 * 60 * 1000;
+const processedUpdateIds = new Map<number, number>();
 
 mkdirSync(DOCUMENT_DOWNLOAD_DIR, { recursive: true });
+
+function pruneProcessedUpdates(now = Date.now()) {
+  for (const [updateId, seenAt] of processedUpdateIds) {
+    if (now - seenAt > PROCESSED_UPDATE_TTL_MS) {
+      processedUpdateIds.delete(updateId);
+    }
+  }
+}
+
+function shouldSkipDuplicateUpdate(ctx: any) {
+  const updateId = ctx.update?.update_id;
+  if (typeof updateId !== 'number') {
+    return false;
+  }
+
+  const now = Date.now();
+  pruneProcessedUpdates(now);
+
+  if (processedUpdateIds.has(updateId)) {
+    return true;
+  }
+
+  processedUpdateIds.set(updateId, now);
+  return false;
+}
+
+bot.use(async (ctx, next) => {
+  if (shouldSkipDuplicateUpdate(ctx)) {
+    await logEvent('telegram.update_deduplicated', {
+      updateId: ctx.update?.update_id ?? null,
+      chatId: ctx.chat?.id ?? null,
+      messageId: ctx.message?.message_id ?? null,
+    });
+    return;
+  }
+
+  await next();
+});
 
 function limitTelegramMessage(text: string) {
   if (text.length <= TELEGRAM_MESSAGE_LIMIT) {
