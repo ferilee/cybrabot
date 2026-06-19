@@ -133,15 +133,20 @@ describe('backend utilities', () => {
     });
     expect(rich).toContain('<h1>Halo</h1>');
     expect(rich).toContain('<ul><li>satu</li></ul>');
-    expect(rich).toContain('<pre><code>');
+    expect(rich).toContain('<pre><code class="language-ts">');
 
     const inline = formatTelegramRichText('Halo **tebal** lalu *miring* dan `kode` [link](https://example.com)');
     expect(inline).toContain('<b>tebal</b>');
     expect(inline).toContain('<i>miring</i>');
     expect(inline).toContain('<code>kode</code>');
     expect(inline).toContain('<a href="https://example.com">link</a>');
+    expect(formatTelegramRichText('==sorot== dan ||spoiler||')).toContain('<mark>sorot</mark>');
+    expect(formatTelegramRichText('==sorot== dan ||spoiler||')).toContain('<tg-spoiler>spoiler</tg-spoiler>');
+    expect(formatTelegramRichText('```math\nsin x = a/b\n```')).toContain('<tg-math-block>\\sin x = \\frac{a}{b}</tg-math-block>');
+    expect(formatTelegramRichText('- [x] selesai\n- [ ] belum')).toContain('☑ selesai');
+    expect(formatTelegramRichText('---')).toContain('<hr/>');
 
-    const htmlInput = '<b>Halo</b> <i>dunia</i><pre><code>tes</code></pre>';
+    const htmlInput = '<b>Halo</b> <i>dunia</i><pre><code>tes</code></pre><details open><summary>Ringkas</summary><p>Isi</p></details><mark>tandai</mark><sub>2</sub><sup>3</sup>';
     expect(containsTelegramHtml(htmlInput)).toBe(true);
     expect(renderTelegramMessageContent(htmlInput)).toBe(htmlInput);
     expect(renderTelegramMessageContent('**Halo**')).toContain('<b>Halo</b>');

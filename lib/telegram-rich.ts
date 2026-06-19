@@ -120,6 +120,8 @@ function formatInlineTelegramRichText(input: string) {
   text = text.replace(/__([^_\n][\s\S]*?[^_\n])__/g, '<b>$1</b>');
   text = text.replace(/\*([^*\n][^*\n]*?[^*\n])\*/g, '<i>$1</i>');
   text = text.replace(/_([^_\n][^_\n]*?[^_\n])_/g, '<i>$1</i>');
+  text = text.replace(/\|\|([^|\n][\s\S]*?[^|\n])\|\|/g, '<tg-spoiler>$1</tg-spoiler>');
+  text = text.replace(/==([^=\n][\s\S]*?[^=\n])==/g, '<mark>$1</mark>');
   text = text.replace(/~~([^~\n][\s\S]*?[^~\n])~~/g, '<s>$1</s>');
 
   return restorePlaceholders(restorePlaceholders(text, placeholders), mathPrepared.placeholders);
@@ -269,6 +271,7 @@ export function formatTelegramRichText(input: string) {
   const tableLines: string[] = [];
 
   let inCode = false;
+  let codeFenceLanguage = '';
 
   const flushQuote = () => {
     if (!quoteLines.length) {
@@ -306,8 +309,16 @@ export function formatTelegramRichText(input: string) {
     if (!codeLines.length) {
       return;
     }
-    output.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+
+    if (['math', 'latex', 'katex'].includes(codeFenceLanguage.toLowerCase())) {
+      output.push(`<tg-math-block>${normalizeMathExpression(codeLines.join('\n').trim())}</tg-math-block>`);
+    } else {
+      const languageClass = codeFenceLanguage ? ` class="language-${escapeHtml(codeFenceLanguage)}"` : '';
+      output.push(`<pre><code${languageClass}>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+    }
+
     codeLines.length = 0;
+    codeFenceLanguage = '';
   };
 
   const flushAll = () => {
@@ -331,6 +342,7 @@ export function formatTelegramRichText(input: string) {
       } else {
         flushAll();
         inCode = true;
+        codeFenceLanguage = trimmed.slice(3).trim();
       }
       continue;
     }
@@ -342,6 +354,12 @@ export function formatTelegramRichText(input: string) {
 
     if (!trimmed) {
       flushAll();
+      continue;
+    }
+
+    if (/^---+$/.test(trimmed)) {
+      flushAll();
+      output.push('<hr/>');
       continue;
     }
 
@@ -376,7 +394,16 @@ export function formatTelegramRichText(input: string) {
       continue;
     }
 
-    const bullet = trimmed.match(/^[-*]\s+(.*)$/);
+    const task = trimmed.match(/^[-*+]\s+\[([ xX])\]\s+(.*)$/);
+    if (task?.[2]) {
+      flushParagraph(paragraphLines, output);
+      flushQuote();
+      const taskState = task[1] || ' ';
+      listItems.items.push(`${taskState.toLowerCase() === 'x' ? '☑' : '☐'} ${task[2]}`);
+      continue;
+    }
+
+    const bullet = trimmed.match(/^[-*+]\s+(.*)$/);
     if (bullet?.[1]) {
       flushParagraph(paragraphLines, output);
       flushQuote();
@@ -404,7 +431,7 @@ export function formatTelegramRichText(input: string) {
 }
 
 export function containsTelegramHtml(input: string) {
-  return /<\/?(b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote|a|ul|ol|li|p|h[1-6]|table|tr|th|td|footer|hr|tg-math|tg-math-block|tg-reference|tg-spoiler)\b[^>]*>/i.test(input);
+  return /<\/?(a|audio|aside|b|blockquote|br|caption|cite|code|del|details|em|figcaption|figure|footer|h[1-6]|hr|i|img|ins|li|mark|ol|p|pre|s|strike|strong|sub|summary|sup|table|tbody|td|tfoot|tg-collage|tg-emoji|tg-map|tg-math|tg-math-block|tg-reference|tg-slideshow|tg-spoiler|tg-time|th|thead|tr|u|ul|video)\b[^>]*>/i.test(input);
 }
 
 export function simplifyTelegramRichContent(input: string) {
