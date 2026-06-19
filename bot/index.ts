@@ -10,11 +10,12 @@ import { generateDocumentDraft, getIntent, type ChatHistoryItem } from '../lib/a
 import { getAdminConfig, isOpenAICompatibleConfigured, saveAdminConfig } from '../lib/admin-config';
 import { answerQuestionAboutDocument, explainDocumentFeatureError, summarizeDocumentFromPath } from '../lib/document-ai';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
-import { cleanupExportFile, detectDocumentExportRequest, materializeExportFile } from '../lib/document-export';
+import { cleanupExportFile, detectDocumentExportRequest, getExportProcessingMessage, materializeExportFile } from '../lib/document-export';
 import { deleteKnowledgeDocument, saveKnowledgeDocument } from '../lib/knowledge';
 import { getProviderQuotaStatus } from '../lib/provider-status';
 import { logEvent } from '../lib/observability';
 import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
+import { getRuntimeResponse } from '../lib/runtime-responses';
 import { runSkillChat } from '../lib/skill-chat';
 import { runLocalTool } from '../lib/tools';
 import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, renderTelegramMessageContent } from '../lib/telegram-rich';
@@ -433,6 +434,11 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
     return true;
   }
 
+  const exportRequest = detectDocumentExportRequest(question);
+  if (exportRequest?.format === 'md') {
+    await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
+  }
+
   const answer = await answerQuestionAboutDocument(session, question, adminConfig.models.document);
   await logEvent('document.question_answered', {
     userId,
@@ -746,7 +752,7 @@ async function exportGeneratedContent(ctx: any, input: {
       error: String(error),
       durationMs: Date.now() - input.startedAt,
     }, 'error');
-    await replySafely(ctx, 'Jawabannya sudah jadi, tapi file ekspornya belum berhasil saya buat.');
+    await replySafely(ctx, await getRuntimeResponse('exportError'));
     return true;
   } finally {
     if (outputPath) {
@@ -780,7 +786,13 @@ async function processIncomingDocument(ctx: any, input: {
     intent: 'document_upload',
   });
 
-  await replySafely(ctx, `Sedang memproses <b>${input.fileName}</b>. Saya akan membaca isinya lalu menyimpannya sebagai dokumen aktif.`);
+  const exportRequest = detectDocumentExportRequest(input.prompt || '');
+  await replySafely(
+    ctx,
+    exportRequest?.format === 'md'
+      ? await getRuntimeResponse('markdownProcessing')
+      : await getRuntimeResponse('documentProcessing', { fileName: input.fileName })
+  );
 
   try {
     const downloaded = await downloadTelegramFile(input.fileId, input.fileName, input.mimeType);
@@ -856,7 +868,7 @@ async function processIncomingDocument(ctx: any, input: {
     });
     await replySafely(
       ctx,
-      'Maaf, file itu belum berhasil saya proses. Saat ini saya mendukung <b>PDF</b>, <b>gambar</b>, <b>DOCX</b>, dan <b>XLSX</b> yang ukurannya masih wajar.'
+      await getRuntimeResponse('documentError')
     );
   } finally {
     // local file is retained for resend support and cleaned up when the session is replaced or cleared
@@ -877,7 +889,9 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
 
   await replySafely(
     ctx,
-    `Sedang menyiapkan file <b>${exportRequest.format.toUpperCase()}</b> untuk permintaan Kakak.`
+    exportRequest.format === 'md'
+      ? await getRuntimeResponse('markdownProcessing')
+      : getExportProcessingMessage(exportRequest.format)
   );
 
   let outputPath = '';
@@ -943,7 +957,7 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
     }, 'error');
     await replySafely(
       ctx,
-      'Maaf, saya belum berhasil membuat file yang diminta. Coba ulangi dengan permintaan yang lebih spesifik.'
+      await getRuntimeResponse('exportError')
     );
     return true;
   } finally {
@@ -969,6 +983,10 @@ async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx', ti
   const content = latestBotMessage.content.trim();
   const title = titleOverride?.trim() || 'Jawaban CybraFeriBot';
   let outputPath = '';
+
+  if (format === 'md') {
+    await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
+  }
 
   try {
     const exported = await materializeExportFile(title, content, format);
@@ -1001,7 +1019,7 @@ async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx', ti
       error: String(error),
       durationMs: Date.now() - startedAt,
     }, 'error');
-    await replySafely(ctx, 'Maaf, saya belum berhasil mengekspor jawaban terakhir ke file.');
+    await replySafely(ctx, await getRuntimeResponse('exportError'));
   } finally {
     if (outputPath) {
       cleanupExportFile(outputPath);
@@ -1052,6 +1070,11 @@ async function handleExplicitSkillCommand(
   const adminConfig = await getAdminConfig();
   const history = await getConversationHistory(userId);
   const intentResult = await getIntent(text, adminConfig);
+  const exportRequest = detectDocumentExportRequest(text);
+
+  if (exportRequest?.format === 'md') {
+    await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
+  }
 
   await logEvent('message.received', {
     userId,
@@ -1790,7 +1813,7 @@ bot.on('message:text', async (ctx) => {
       error: String(error),
       durationMs: Date.now() - startedAt,
     }, 'error');
-    await replySafely(ctx, 'Aduh, sepertinya otak digital saya sedikit korsleting. Bisa ulangi pertanyaannya? 🤖');
+    await replySafely(ctx, await getRuntimeResponse('aiError'));
   }
 });
 

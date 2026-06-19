@@ -25,6 +25,14 @@ export type ExportRequest = {
   title: string;
 };
 
+export function getExportProcessingMessage(format: ExportFormat) {
+  if (format === 'md') {
+    return 'Siap kak, skill aktif! Tunggu sebentar yaaa ... sedang kuproses';
+  }
+
+  return `Sedang menyiapkan file <b>${format.toUpperCase()}</b> untuk permintaan Kakak.`;
+}
+
 type ParsedLine =
   | { type: 'heading1'; text: string }
   | { type: 'heading2'; text: string }

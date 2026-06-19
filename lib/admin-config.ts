@@ -18,6 +18,13 @@ export type AdminConfig = {
     openAICompatible: boolean;
   };
   personaOverride: string;
+  responseTemplates: {
+    markdownProcessing: string;
+    documentProcessing: string;
+    aiError: string;
+    documentError: string;
+    exportError: string;
+  };
   selfDescribe: {
     identity: string;
     features: string;
@@ -31,6 +38,7 @@ export type AdminConfigInput = {
   models?: Partial<AdminConfig['models']>;
   providers?: Partial<AdminConfig['providers']>;
   personaOverride?: string;
+  responseTemplates?: Partial<AdminConfig['responseTemplates']>;
   selfDescribe?: Partial<AdminConfig['selfDescribe']>;
 };
 
@@ -56,6 +64,15 @@ const defaultAdminConfig: AdminConfig = {
     ),
   },
   personaOverride: '',
+  responseTemplates: {
+    markdownProcessing: 'Siap kak, skill aktif! Tunggu sebentar yaaa ... sedang kuproses',
+    documentProcessing:
+      'Sedang memproses <b>{{fileName}}</b>. Saya akan membaca isinya lalu menyimpannya sebagai dokumen aktif.',
+    aiError: 'Aduh, sepertinya otak digital saya sedikit korsleting. Bisa ulangi pertanyaannya? 🤖',
+    documentError:
+      'Maaf, file itu belum berhasil saya proses. Saat ini saya mendukung <b>PDF</b>, <b>gambar</b>, <b>DOCX</b>, dan <b>XLSX</b> yang ukurannya masih wajar.',
+    exportError: 'Maaf, saya belum berhasil membuat file yang diminta. Coba ulangi dengan permintaan yang lebih spesifik.',
+  },
   selfDescribe: {
     identity:
       `<b>CybraFeriBot</b> adalah bot Telegram hybrid berbasis <b>Bun</b>, <b>Hono</b>, <b>SQLite</b>, dan <b>Gemini API</b>.\n\n` +
@@ -120,6 +137,10 @@ export async function getAdminConfig(): Promise<AdminConfig> {
         ...(parsed.providers || {}),
       },
       personaOverride: parsed.personaOverride || '',
+      responseTemplates: {
+        ...defaultAdminConfig.responseTemplates,
+        ...(parsed.responseTemplates || {}),
+      },
       selfDescribe: {
         ...defaultAdminConfig.selfDescribe,
         ...(parsed.selfDescribe || {}),
@@ -146,6 +167,10 @@ export async function saveAdminConfig(input: AdminConfigInput) {
       ...(input.providers || {}),
     },
     personaOverride: input.personaOverride ?? existing.personaOverride,
+    responseTemplates: {
+      ...existing.responseTemplates,
+      ...(input.responseTemplates || {}),
+    },
     selfDescribe: {
       ...existing.selfDescribe,
       ...(input.selfDescribe || {}),
