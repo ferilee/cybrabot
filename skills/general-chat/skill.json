@@ -1,0 +1,7 @@
+{
+  "id": "general-chat",
+  "title": "General Chat",
+  "description": "Menjawab pertanyaan umum dengan konteks knowledge lokal bila tersedia.",
+  "triggers": ["tanya", "jelaskan", "apa", "bagaimana", "kenapa", "siapa"],
+  "modelHint": "chat"
+}

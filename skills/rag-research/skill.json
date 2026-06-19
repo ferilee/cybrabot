@@ -1,0 +1,7 @@
+{
+  "id": "rag-research",
+  "title": "RAG Research",
+  "description": "Menjawab pertanyaan dengan menekankan knowledge base lokal dan batasan sumber.",
+  "triggers": ["berdasarkan data", "knowledge", "sumber", "referensi", "profil", "cybraferibot", "feri"],
+  "modelHint": "chat"
+}

@@ -5,6 +5,8 @@ import { getAdminConfig, isValidAdminToken, saveAdminConfig } from '../lib/admin
 import { deleteKnowledgeDocument, listKnowledgeDocuments, saveKnowledgeDocument } from '../lib/knowledge';
 import { getProviderQuotaStatus } from '../lib/provider-status';
 import { resetUserPreferences } from '../lib/preferences';
+import { getWebChatSkills, handleWebChat } from '../lib/web-chat';
+import { getAgentReachStatus } from '../lib/agent-reach';
 import { db } from '../db';
 import { users, messages, telemetryEvents } from '../db/schema';
 import { count, desc } from 'drizzle-orm';
@@ -724,8 +726,821 @@ function renderAdminPage() {
   `;
 }
 
-// Root Dashboard (Premium Aesthetics)
-app.get('/', async (c) => {
+function renderWebChatPage() {
+  return `
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="theme-color" content="#17456f">
+      <title>CybraFeriBot Web Chat</title>
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+      <style>
+        :root {
+          --sky-top: #72a7d5;
+          --sky-mid: #3f78a8;
+          --sky-bottom: #173f65;
+          --ink: #102333;
+          --paper: rgba(247, 249, 250, 0.96);
+          --night: rgba(16, 31, 43, 0.94);
+          --line: rgba(255, 255, 255, 0.2);
+          --muted: rgba(255, 255, 255, 0.68);
+          --lime: #95dc59;
+          --danger: #ffaaa5;
+        }
+        * { box-sizing: border-box; }
+        html { color-scheme: dark; }
+        body {
+          margin: 0;
+          min-height: 100vh;
+          overflow: hidden;
+          font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+          color: #fff;
+          background:
+            radial-gradient(circle at 14% 18%, rgba(255,255,255,0.34), transparent 23%),
+            radial-gradient(circle at 85% 9%, rgba(173,215,248,0.28), transparent 29%),
+            linear-gradient(155deg, var(--sky-top) 0%, var(--sky-mid) 46%, var(--sky-bottom) 100%);
+        }
+        body::before {
+          content: "";
+          position: fixed;
+          inset: 0;
+          pointer-events: none;
+          opacity: 0.22;
+          background-image:
+            linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+          background-size: 38px 38px;
+          mask-image: linear-gradient(to bottom, #000, transparent 85%);
+        }
+        button, textarea { font: inherit; }
+        button, a { -webkit-tap-highlight-color: transparent; }
+        .app-shell {
+          position: relative;
+          z-index: 1;
+          width: min(1280px, 100%);
+          min-height: 100vh;
+          height: 100vh;
+          margin: 0 auto;
+          padding: 20px;
+          display: grid;
+          grid-template-columns: 270px minmax(0, 1fr);
+          gap: 20px;
+        }
+        .glass {
+          border: 1px solid var(--line);
+          box-shadow: 0 24px 70px rgba(4, 21, 37, 0.3);
+          backdrop-filter: blur(22px);
+          -webkit-backdrop-filter: blur(22px);
+        }
+        .sidebar {
+          min-height: 0;
+          overflow: auto;
+          padding: 22px 18px;
+          border-radius: 34px;
+          background: rgba(12, 39, 63, 0.48);
+          scrollbar-width: thin;
+          scrollbar-color: rgba(255,255,255,0.25) transparent;
+        }
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 2px 4px 22px;
+        }
+        .brand-orb, .avatar {
+          display: grid;
+          place-items: center;
+          flex: 0 0 auto;
+          color: white;
+          font-weight: 800;
+          border: 3px solid rgba(255,255,255,0.78);
+          box-shadow: 0 10px 26px rgba(5, 19, 31, 0.35);
+          background:
+            radial-gradient(circle at 32% 25%, #9ff2ff 0 8%, transparent 9%),
+            conic-gradient(from 220deg, #071d32, #178db2, #742ea5, #0b2b45, #071d32);
+        }
+        .brand-orb {
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+        }
+        .brand strong {
+          display: block;
+          font-size: 16px;
+          letter-spacing: -0.02em;
+        }
+        .brand span {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          margin-top: 3px;
+          color: var(--muted);
+          font-size: 11px;
+        }
+        .online-dot, .reach-dot {
+          display: inline-block;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--lime);
+          box-shadow: 0 0 10px rgba(149,220,89,0.75);
+        }
+        .sidebar-label {
+          margin: 8px 6px 10px;
+          color: rgba(255,255,255,0.54);
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+        }
+        .skill-list {
+          display: grid;
+          gap: 7px;
+        }
+        .skill-button {
+          width: 100%;
+          padding: 11px 12px;
+          border: 1px solid transparent;
+          border-radius: 16px;
+          text-align: left;
+          color: rgba(255,255,255,0.9);
+          background: transparent;
+          cursor: pointer;
+          transition: 160ms ease;
+        }
+        .skill-button:hover {
+          border-color: rgba(255,255,255,0.12);
+          background: rgba(255,255,255,0.08);
+          transform: translateX(2px);
+        }
+        .skill-button.active {
+          color: #fff;
+          border-color: rgba(255,255,255,0.18);
+          background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.07));
+          box-shadow: inset 3px 0 0 var(--lime);
+        }
+        .skill-button strong {
+          display: block;
+          font-size: 13px;
+        }
+        .skill-button span {
+          display: block;
+          margin-top: 3px;
+          overflow: hidden;
+          color: rgba(255,255,255,0.5);
+          font-size: 11px;
+          line-height: 1.35;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .reach-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          padding: 2px 5px 18px;
+        }
+        .reach-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 6px 8px;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 999px;
+          color: rgba(255,255,255,0.7);
+          background: rgba(3,19,32,0.2);
+          font-size: 10px;
+        }
+        .reach-dot.missing {
+          background: #ffb15c;
+          box-shadow: none;
+        }
+        .sidebar-links {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 7px;
+          margin-top: 8px;
+        }
+        .sidebar-links a {
+          padding: 9px;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 13px;
+          color: rgba(255,255,255,0.72);
+          text-align: center;
+          text-decoration: none;
+          font-size: 11px;
+        }
+        .chat {
+          min-width: 0;
+          min-height: 0;
+          display: grid;
+          grid-template-rows: auto minmax(0, 1fr) auto;
+          overflow: hidden;
+          border-radius: 38px;
+          background: linear-gradient(145deg, rgba(16,53,82,0.27), rgba(7,27,45,0.38));
+        }
+        .chat-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 18px 24px 12px;
+        }
+        .chat-title {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+        }
+        .mobile-menu {
+          display: none;
+          width: 38px;
+          height: 38px;
+          border: 1px solid rgba(255,255,255,0.16);
+          border-radius: 50%;
+          color: #fff;
+          background: rgba(6,25,41,0.25);
+          cursor: pointer;
+        }
+        .chat-title h1 {
+          margin: 0;
+          font-size: clamp(18px, 2.2vw, 24px);
+          letter-spacing: -0.04em;
+        }
+        .chat-title p {
+          margin: 3px 0 0;
+          color: rgba(255,255,255,0.58);
+          font-size: 11px;
+        }
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .model-pill {
+          max-width: 190px;
+          overflow: hidden;
+          padding: 8px 12px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 999px;
+          color: rgba(255,255,255,0.74);
+          background: rgba(8,30,48,0.28);
+          font-size: 10px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .icon-button {
+          display: grid;
+          width: 36px;
+          height: 36px;
+          place-items: center;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 50%;
+          color: #fff;
+          background: rgba(8,30,48,0.28);
+          cursor: pointer;
+        }
+        .messages {
+          min-height: 0;
+          overflow: auto;
+          padding: 24px clamp(18px, 5vw, 68px) 34px;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(255,255,255,0.25) transparent;
+        }
+        .welcome {
+          max-width: 580px;
+          margin: 8vh auto 42px;
+          text-align: center;
+        }
+        .welcome .brand-orb {
+          width: 74px;
+          height: 74px;
+          margin: 0 auto 16px;
+          font-size: 22px;
+        }
+        .welcome h2 {
+          margin: 0;
+          font-size: clamp(28px, 5vw, 48px);
+          letter-spacing: -0.055em;
+        }
+        .welcome p {
+          max-width: 460px;
+          margin: 10px auto 0;
+          color: rgba(255,255,255,0.65);
+          font-size: 13px;
+          line-height: 1.6;
+        }
+        .suggestions {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 8px;
+          margin-top: 20px;
+        }
+        .suggestion {
+          padding: 8px 12px;
+          border: 1px solid rgba(255,255,255,0.16);
+          border-radius: 999px;
+          color: rgba(255,255,255,0.8);
+          background: rgba(7,27,44,0.22);
+          font-size: 11px;
+          cursor: pointer;
+        }
+        .message-row {
+          display: flex;
+          align-items: flex-end;
+          width: min(780px, 94%);
+          margin: 0 auto 22px;
+          animation: arrive 260ms ease-out;
+        }
+        .message-row.user { flex-direction: row-reverse; }
+        .avatar {
+          position: relative;
+          z-index: 2;
+          width: 68px;
+          height: 68px;
+          margin-right: -20px;
+          border-radius: 50%;
+          font-size: 18px;
+        }
+        .message-row.user .avatar {
+          margin-right: 0;
+          margin-left: -20px;
+          color: #153149;
+          background:
+            radial-gradient(circle at 70% 26%, #fff 0 7%, transparent 8%),
+            conic-gradient(from 40deg, #d8f0ff, #6cb7dc, #335c8b, #e1f5ff);
+        }
+        .bubble {
+          min-width: 0;
+          flex: 1;
+          padding: 17px 25px 18px 34px;
+          border: 1px solid rgba(255,255,255,0.18);
+          border-radius: 18px 48px 48px 48px;
+          color: rgba(255,255,255,0.94);
+          background: var(--night);
+          box-shadow:
+            0 16px 35px rgba(4,17,29,0.24),
+            inset 0 1px 0 rgba(255,255,255,0.13);
+        }
+        .message-row.user .bubble {
+          padding: 17px 34px 18px 25px;
+          border-color: rgba(255,255,255,0.76);
+          border-radius: 48px 18px 48px 48px;
+          color: var(--ink);
+          background: var(--paper);
+          box-shadow:
+            0 16px 35px rgba(4,17,29,0.18),
+            inset 0 1px 0 #fff;
+        }
+        .message-meta {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          margin-bottom: 6px;
+          color: rgba(255,255,255,0.56);
+          font-size: 9px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+        .message-row.user .message-meta { color: rgba(16,35,51,0.54); }
+        .message-content {
+          overflow-wrap: anywhere;
+          font-size: 13px;
+          line-height: 1.55;
+          white-space: pre-wrap;
+        }
+        .message-content code {
+          padding: 2px 5px;
+          border-radius: 5px;
+          background: rgba(255,255,255,0.12);
+          font-size: 0.9em;
+        }
+        .message-row.user .message-content code { background: rgba(16,35,51,0.09); }
+        .typing .bubble { flex: 0 0 auto; padding-right: 28px; }
+        .typing-dots { display: flex; gap: 4px; padding: 6px 0 2px; }
+        .typing-dots span {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.65);
+          animation: pulse 1s infinite alternate;
+        }
+        .typing-dots span:nth-child(2) { animation-delay: 180ms; }
+        .typing-dots span:nth-child(3) { animation-delay: 360ms; }
+        .composer-wrap {
+          padding: 10px clamp(18px, 5vw, 68px) 22px;
+        }
+        .composer {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 10px;
+          align-items: end;
+          max-width: 780px;
+          margin: 0 auto;
+          padding: 8px 8px 8px 20px;
+          border-radius: 28px 28px 28px 10px;
+          background: rgba(248,250,251,0.96);
+          box-shadow: 0 18px 48px rgba(4,17,29,0.27);
+        }
+        .composer textarea {
+          width: 100%;
+          min-height: 42px;
+          max-height: 140px;
+          resize: none;
+          padding: 11px 0 8px;
+          border: 0;
+          outline: 0;
+          color: var(--ink);
+          background: transparent;
+          font-size: 13px;
+          line-height: 1.45;
+        }
+        .composer textarea::placeholder { color: #70808d; }
+        .send-button {
+          display: grid;
+          width: 46px;
+          height: 46px;
+          place-items: center;
+          border: 0;
+          border-radius: 50%;
+          color: white;
+          background: linear-gradient(145deg, #224f73, #102d47);
+          box-shadow: 0 8px 18px rgba(15,45,70,0.3);
+          cursor: pointer;
+          transition: 160ms ease;
+        }
+        .send-button:hover { transform: translateY(-1px) scale(1.03); }
+        .send-button:disabled {
+          opacity: 0.48;
+          cursor: not-allowed;
+        }
+        .composer-note {
+          max-width: 780px;
+          margin: 7px auto 0;
+          color: rgba(255,255,255,0.48);
+          text-align: center;
+          font-size: 9px;
+        }
+        .sidebar-backdrop { display: none; }
+        @keyframes arrive {
+          from { opacity: 0; transform: translateY(9px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse {
+          from { opacity: 0.35; transform: translateY(2px); }
+          to { opacity: 1; transform: translateY(-2px); }
+        }
+        @media (max-width: 820px) {
+          body { overflow: hidden; }
+          .app-shell {
+            display: block;
+            height: 100dvh;
+            min-height: 100dvh;
+            padding: 0;
+          }
+          .chat {
+            height: 100%;
+            border: 0;
+            border-radius: 0;
+          }
+          .sidebar {
+            position: fixed;
+            z-index: 20;
+            inset: 10px auto 10px 10px;
+            width: min(290px, calc(100vw - 40px));
+            transform: translateX(calc(-100% - 24px));
+            transition: transform 220ms ease;
+          }
+          .sidebar.open { transform: translateX(0); }
+          .sidebar-backdrop {
+            position: fixed;
+            z-index: 19;
+            inset: 0;
+            display: block;
+            visibility: hidden;
+            opacity: 0;
+            border: 0;
+            background: rgba(3,14,24,0.48);
+            transition: 220ms ease;
+          }
+          .sidebar-backdrop.open { visibility: visible; opacity: 1; }
+          .mobile-menu { display: grid; }
+          .chat-header { padding: 13px 14px 8px; }
+          .model-pill { max-width: 105px; }
+          .messages { padding: 16px 10px 24px; }
+          .welcome { margin-top: 7vh; padding: 0 18px; }
+          .message-row { width: 100%; padding: 0 4px; }
+          .avatar { width: 50px; height: 50px; margin-right: -15px; font-size: 14px; }
+          .message-row.user .avatar { margin-left: -15px; }
+          .bubble { padding: 14px 18px 15px 27px; border-radius: 14px 30px 30px 30px; }
+          .message-row.user .bubble { padding: 14px 27px 15px 18px; border-radius: 30px 14px 30px 30px; }
+          .message-content { font-size: 12px; }
+          .composer-wrap { padding: 8px 10px max(12px, env(safe-area-inset-bottom)); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            scroll-behavior: auto !important;
+            animation-duration: 0.01ms !important;
+            transition-duration: 0.01ms !important;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <button id="sidebarBackdrop" class="sidebar-backdrop" aria-label="Tutup menu"></button>
+      <div class="app-shell">
+        <aside id="sidebar" class="sidebar glass">
+          <div class="brand">
+            <div class="brand-orb">C</div>
+            <div>
+              <strong>CybraFeriBot</strong>
+              <span><i class="online-dot"></i> Online dan siap ngobrol</span>
+            </div>
+          </div>
+          <div class="sidebar-label">Pilih keahlian</div>
+          <div id="skillList" class="skill-list"></div>
+          <div class="sidebar-label" style="margin-top: 22px;">Agent Reach</div>
+          <div id="reachStatus" class="reach-list"></div>
+          <div class="sidebar-links">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/admin">Admin</a>
+          </div>
+        </aside>
+        <main class="chat glass">
+          <header class="chat-header">
+            <div class="chat-title">
+              <button id="mobileMenu" class="mobile-menu" type="button" aria-label="Buka menu">☰</button>
+              <div>
+                <h1 id="activeSkillTitle">Auto Skill</h1>
+                <p id="activeSkillDescription">Cybra memilih kemampuan yang paling cocok.</p>
+              </div>
+            </div>
+            <div class="header-actions">
+              <span id="modelStatus" class="model-pill">Model otomatis</span>
+              <button id="clearButton" class="icon-button" type="button" title="Percakapan baru" aria-label="Percakapan baru">↻</button>
+            </div>
+          </header>
+          <section id="messages" class="messages" aria-live="polite">
+            <div id="welcome" class="welcome">
+              <div class="brand-orb">C</div>
+              <h2>Mau bikin apa hari ini?</h2>
+              <p>Tanya, riset, susun dokumen, atau bedah masalah teknis. Cybra siap membantu tanpa meminta kopi, setidaknya untuk sekarang.</p>
+              <div class="suggestions">
+                <button class="suggestion" type="button">Ringkas topik pelajaran</button>
+                <button class="suggestion" type="button">Buat rancangan dokumen</button>
+                <button class="suggestion" type="button">Cari informasi di web</button>
+              </div>
+            </div>
+          </section>
+          <footer class="composer-wrap">
+            <form id="chatForm" class="composer">
+              <textarea id="messageInput" rows="1" placeholder="Tulis sesuatu untuk Cybra..." autocomplete="off" aria-label="Pesan"></textarea>
+              <button id="sendButton" class="send-button" type="submit" aria-label="Kirim pesan">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </form>
+            <div class="composer-note">Enter untuk kirim · Shift + Enter untuk baris baru</div>
+          </footer>
+        </main>
+      </div>
+      <script>
+        const skillList = document.getElementById('skillList');
+        const reachStatus = document.getElementById('reachStatus');
+        const messages = document.getElementById('messages');
+        const form = document.getElementById('chatForm');
+        const input = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const activeSkillTitle = document.getElementById('activeSkillTitle');
+        const activeSkillDescription = document.getElementById('activeSkillDescription');
+        const modelStatus = document.getElementById('modelStatus');
+        const welcome = document.getElementById('welcome');
+        const clearButton = document.getElementById('clearButton');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+        const mobileMenu = document.getElementById('mobileMenu');
+        const state = {
+          skills: [],
+          selectedSkillId: '',
+          history: loadStoredHistory(),
+        };
+
+        function loadStoredHistory() {
+          try {
+            const value = JSON.parse(sessionStorage.getItem('cybra-web-history') || '[]');
+            return Array.isArray(value) ? value.slice(-12) : [];
+          } catch {
+            return [];
+          }
+        }
+
+        function persistHistory() {
+          sessionStorage.setItem('cybra-web-history', JSON.stringify(state.history.slice(-12)));
+        }
+
+        function escapeHtml(value) {
+          return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+
+        function renderMarkdownLite(text) {
+          const escaped = escapeHtml(text);
+          return escaped
+            .replace(/^### (.*)$/gm, '<strong>$1</strong>')
+            .replace(/^## (.*)$/gm, '<strong>$1</strong>')
+            .replace(/^# (.*)$/gm, '<strong>$1</strong>')
+            .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')
+            .replace(/\\\`([^\\\`]+)\\\`/g, '<code>$1</code>');
+        }
+
+        function addMessage(role, content, meta = {}) {
+          if (welcome) welcome.hidden = true;
+          document.getElementById('typingMessage')?.remove();
+          const row = document.createElement('article');
+          row.className = 'message-row ' + role;
+          const avatar = document.createElement('div');
+          avatar.className = 'avatar';
+          avatar.textContent = role === 'user' ? 'U' : 'C';
+          const bubble = document.createElement('div');
+          bubble.className = 'bubble';
+          const time = new Intl.DateTimeFormat('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }).format(new Date());
+          const label = role === 'user' ? 'Kamu' : 'Cybra';
+          const detail = meta.skillTitle || meta.route || '';
+          bubble.innerHTML =
+            '<div class="message-meta"><strong>' + label + '</strong><span>' + escapeHtml(time) + '</span>' +
+            (detail ? '<span>· ' + escapeHtml(detail) + '</span>' : '') +
+            '</div><div class="message-content">' + renderMarkdownLite(content) + '</div>';
+          row.append(avatar, bubble);
+          messages.appendChild(row);
+          messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+        }
+
+        function showTyping() {
+          const el = document.createElement('article');
+          el.id = 'typingMessage';
+          el.className = 'message-row assistant typing';
+          el.innerHTML =
+            '<div class="avatar">C</div><div class="bubble">' +
+            '<div class="message-meta"><strong>Cybra</strong><span>sedang meracik jawaban</span></div>' +
+            '<div class="typing-dots"><span></span><span></span><span></span></div></div>';
+          messages.appendChild(el);
+          messages.scrollTop = messages.scrollHeight;
+        }
+
+        function closeSidebar() {
+          sidebar.classList.remove('open');
+          sidebarBackdrop.classList.remove('open');
+        }
+
+        function selectSkill(skillId) {
+          state.selectedSkillId = skillId;
+          const selected = state.skills.find((skill) => skill.id === skillId);
+          activeSkillTitle.textContent = selected ? selected.title : 'Auto Skill';
+          activeSkillDescription.textContent = selected ? selected.description : 'Cybra memilih kemampuan yang paling cocok.';
+          for (const button of skillList.querySelectorAll('button')) {
+            button.classList.toggle('active', button.dataset.skillId === skillId);
+          }
+          closeSidebar();
+        }
+
+        async function loadSkills() {
+          const response = await fetch('/api/chat/skills');
+          const data = await response.json();
+          state.skills = Array.isArray(data.skills) ? data.skills : [];
+          skillList.innerHTML = '';
+
+          const autoButton = document.createElement('button');
+          autoButton.className = 'skill-button active';
+          autoButton.dataset.skillId = '';
+          autoButton.innerHTML = '<strong>✦ Auto Skill</strong><span>Biarkan Cybra memilih modul yang sesuai</span>';
+          autoButton.addEventListener('click', () => selectSkill(''));
+          skillList.appendChild(autoButton);
+
+          for (const skill of state.skills) {
+            const button = document.createElement('button');
+            button.className = 'skill-button';
+            button.dataset.skillId = skill.id;
+            button.innerHTML = '<strong>' + escapeHtml(skill.title) + '</strong><span>' + escapeHtml(skill.description || '') + '</span>';
+            button.addEventListener('click', () => selectSkill(skill.id));
+            skillList.appendChild(button);
+          }
+        }
+
+        async function loadAgentReachStatus() {
+          const response = await fetch('/api/agent-reach/status');
+          const data = await response.json();
+          const channels = Array.isArray(data.channels) ? data.channels : [];
+          reachStatus.innerHTML = channels.map((channel) => {
+            const dotClass = channel.available ? 'reach-dot' : 'reach-dot missing';
+            return '<span class="reach-chip" title="' + escapeHtml(channel.detail) + '">' +
+              '<i class="' + dotClass + '"></i>' + escapeHtml(channel.title) + '</span>';
+          }).join('');
+        }
+
+        async function submitMessage(rawMessage) {
+          const message = String(rawMessage || '').trim();
+          if (!message) return;
+
+          input.value = '';
+          input.style.height = 'auto';
+          sendButton.disabled = true;
+          addMessage('user', message);
+          state.history.push({ role: 'user', content: message });
+          persistHistory();
+          showTyping();
+
+          try {
+            const response = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message,
+                skillId: state.selectedSkillId || undefined,
+                history: state.history.slice(-12),
+              }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Request failed');
+            addMessage('assistant', data.reply || '', {
+              skillTitle: data.skill?.title,
+              route: data.route,
+            });
+            modelStatus.textContent = data.model || data.route || 'OK';
+            state.history.push({ role: 'assistant', content: data.reply || '' });
+            persistHistory();
+          } catch (error) {
+            const text = error instanceof Error ? error.message : 'Terjadi kesalahan.';
+            addMessage('assistant', text, { route: 'error' });
+          } finally {
+            sendButton.disabled = false;
+            input.focus();
+          }
+        }
+
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          await submitMessage(input.value);
+        });
+
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            form.requestSubmit();
+          }
+        });
+
+        input.addEventListener('input', () => {
+          input.style.height = 'auto';
+          input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+        });
+
+        clearButton.addEventListener('click', () => {
+          state.history = [];
+          persistHistory();
+          messages.querySelectorAll('.message-row').forEach((item) => item.remove());
+          if (welcome) welcome.hidden = false;
+          modelStatus.textContent = 'Model otomatis';
+          input.focus();
+        });
+
+        mobileMenu.addEventListener('click', () => {
+          sidebar.classList.add('open');
+          sidebarBackdrop.classList.add('open');
+        });
+        sidebarBackdrop.addEventListener('click', closeSidebar);
+
+        document.querySelectorAll('.suggestion').forEach((button) => {
+          button.addEventListener('click', () => submitMessage(button.textContent));
+        });
+
+        Promise.all([loadSkills(), loadAgentReachStatus()]).then(() => {
+          for (const item of state.history) {
+            addMessage(item.role, item.content, { route: 'riwayat' });
+          }
+          input.focus();
+        }).catch(() => {
+          addMessage('assistant', 'Sebagian layanan pendukung belum berhasil dimuat. Chat tetap bisa dicoba.', { route: 'peringatan' });
+        });
+      </script>
+    </body>
+    </html>
+  `;
+}
+
+// Operational dashboard
+app.get('/dashboard', async (c) => {
   const userCount = await db.select({ value: count() }).from(users);
   const msgCount = await db.select({ value: count() }).from(messages);
   const recentMessages = await db.query.messages.findMany({
@@ -943,6 +1758,7 @@ app.get('/', async (c) => {
 
         <div class="glass log-section" style="margin-bottom: 3rem;">
             <h3 style="margin-top: 0;">Admin Controls</h3>
+            <div class="summary-row"><span>Web Chat</span><strong><a href="/" style="color:#a5b4fc;">OPEN</a></strong></div>
             <div class="summary-row"><span>Math tool</span><strong>${adminConfig.enabledTools.math ? 'ON' : 'OFF'}</strong></div>
             <div class="summary-row"><span>Caption tool</span><strong>${adminConfig.enabledTools.caption ? 'ON' : 'OFF'}</strong></div>
             <div class="summary-row"><span>Announcement tool</span><strong>${adminConfig.enabledTools.announcement ? 'ON' : 'OFF'}</strong></div>
@@ -971,6 +1787,48 @@ app.get('/', async (c) => {
 });
 
 app.get('/admin', (c) => c.html(renderAdminPage()));
+
+app.get('/', (c) => c.html(renderWebChatPage()));
+
+app.get('/chat', (c) => c.html(renderWebChatPage()));
+
+app.get('/api/chat/skills', (c) => {
+  return c.json({ skills: getWebChatSkills() });
+});
+
+app.get('/api/agent-reach/status', (c) => {
+  return c.json({ channels: getAgentReachStatus() });
+});
+
+app.post('/api/chat', async (c) => {
+  const body = await c.req.json<{
+    message?: unknown;
+    skillId?: unknown;
+    history?: unknown;
+  }>().catch(() => null);
+
+  if (!body || typeof body.message !== 'string') {
+    return c.json({ error: 'message is required' }, 400);
+  }
+
+  const history = Array.isArray(body.history)
+    ? body.history.filter((item): item is { role: 'user' | 'assistant'; content: string } => {
+        if (!item || typeof item !== 'object') {
+          return false;
+        }
+        const value = item as Record<string, unknown>;
+        return (value.role === 'user' || value.role === 'assistant') && typeof value.content === 'string';
+      })
+    : [];
+
+  const result = await handleWebChat({
+    message: body.message,
+    skillId: typeof body.skillId === 'string' ? body.skillId : undefined,
+    history,
+  });
+
+  return c.json(result);
+});
 
 app.get('/admin/insights', async (c) => {
   const token = c.req.query('token') || c.req.header('x-admin-token');

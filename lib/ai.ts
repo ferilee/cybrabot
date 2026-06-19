@@ -61,13 +61,24 @@ export type DocumentDraftResult = {
   fallback: boolean;
 };
 
+export type SkillResponseResult = {
+  text: string;
+  model: string;
+  latencyMs: number;
+  knowledgeMatches: string[];
+  historyCount: number;
+  fallback: boolean;
+};
+
 const intentInstructions = `Determine the intent of the following user message for a Telegram bot named @CybraFeriBot.
 The bot is a futuristic smart assistant.
 Respond with ONLY ONE word: 'technical' if it's about math, code, or admin tasks; otherwise 'casual'.`;
 
 const casualInstructions = `Anda adalah @CybraFeriBot, asisten pintar futuristik buatan Feri Lee.
-Gunakan bahasa Indonesia yang santai, alami, namun tetap sopan.
-Panggil pengguna dengan sebutan "Kakak".
+Gunakan bahasa Indonesia yang humanis, santai, hangat, dan tetap sopan.
+Panggil pengguna dengan sebutan "Kakak" bila terasa natural.
+Boleh sisipkan humor ringan atau analogi receh secukupnya, seperti bumbu dapur: terasa, tapi jangan sampai mendominasi masakan.
+Jangan terlalu kaku, jangan terdengar seperti brosur, dan jangan kebanyakan emoji.
 PENTING: Tulis jawaban dalam plain text terstruktur yang nanti akan diformat oleh bot menjadi Telegram Rich Message HTML.
 Gunakan pola berikut bila relevan:
 - baris judul utama diawali "# "
@@ -87,8 +98,9 @@ Mas Feri Dwi Hermawan (atau Mas Feri Lee) adalah sosok "Guru SMK Paket Lengkap".
 Intinya, beliau adalah pendidik modern yang "full-stack teacher" dan selalu haus belajar hal baru untuk membantu orang lain.`;
 
 const technicalInstructions = `Anda adalah @CybraFeriBot, asisten teknis yang membantu secara praktis.
-Gunakan bahasa Indonesia yang jelas, ringkas, dan langsung ke solusi.
+Gunakan bahasa Indonesia yang jelas, ringkas, santai, dan langsung ke solusi.
 Panggil pengguna dengan sebutan "Kakak" bila terasa natural.
+Humor ringan boleh dipakai untuk mencairkan suasana, tetapi jangan mengganggu akurasi teknis.
 Kalau pengguna meminta dibuatkan sesuatu, jangan hanya memberi komentar umum; berikan hasil kerja nyata, langkah, struktur, contoh, atau draft yang bisa dipakai.
 Kalau informasi kurang, buat asumsi yang wajar dan sebutkan asumsi itu singkat di awal.
 PENTING: Tulis jawaban dalam plain text terstruktur yang nanti akan diformat oleh bot menjadi Telegram Rich Message HTML.
@@ -102,7 +114,7 @@ JANGAN gunakan HTML mentah.
 Jangan mengarang fakta spesifik yang tidak diketahui.`;
 
 const documentDraftInstructions = `Anda adalah @CybraFeriBot, asisten yang menyiapkan isi dokumen untuk diekspor menjadi PDF atau DOCX.
-Buat isi dokumen dalam bahasa Indonesia yang rapi, langsung siap diekspor.
+Buat isi dokumen dalam bahasa Indonesia yang rapi, humanis, dan langsung siap diekspor.
 Gunakan format plain text terstruktur dengan aturan berikut:
 - Baris judul utama diawali "# "
 - Subjudul diawali "## "
@@ -366,6 +378,63 @@ export async function generateDocumentDraft(
       title: 'Dokumen CybraFeriBot',
       model,
       latencyMs: 0,
+      fallback: true,
+    };
+  }
+}
+
+export async function generateSkillResponse(input: {
+  message: string;
+  history?: ChatHistoryItem[];
+  skillTitle: string;
+  skillInstructions: string;
+  externalContext?: string;
+  adminConfig?: Pick<AdminConfig, 'personaOverride' | 'models'>;
+}): Promise<SkillResponseResult> {
+  const knowledge = getKnowledgeContext(input.message);
+  const history = input.history || [];
+  const model = resolveModel(input.adminConfig?.models.chat, chatModel);
+  const instructions =
+    `Anda adalah @CybraFeriBot dalam mode web chat berbasis skill.\n` +
+    `Gunakan bahasa Indonesia yang jelas, akurat, praktis, humanis, dan santai.\n` +
+    `Boleh gunakan humor ringan jika cocok dengan konteks, tetapi jangan mengorbankan ketepatan jawaban.\n` +
+    `Jangan terdengar seperti template robot; jawab seperti rekan kerja yang sigap dan enak diajak ngobrol.\n` +
+    `Skill aktif: ${input.skillTitle}\n\n` +
+    `${input.skillInstructions}\n\n` +
+    `Jika pengetahuan lokal tidak cukup, jelaskan asumsi dan jangan mengarang fakta spesifik.`;
+
+  try {
+    const result = await generateText(
+      model,
+      instructions,
+      `${input.adminConfig?.personaOverride ? `${input.adminConfig.personaOverride}\n` : ''}` +
+      `${input.externalContext ? `Konteks eksternal:\n${input.externalContext}\n\n` : ''}` +
+      `${knowledge.context}` +
+      `${formatHistory(history)}` +
+      `Pesan terbaru user:\n${input.message}`
+    );
+
+    return {
+      text: result.text,
+      model,
+      latencyMs: result.latencyMs,
+      knowledgeMatches: knowledge.matches,
+      historyCount: history.length,
+      fallback: false,
+    };
+  } catch (error: any) {
+    await logEvent('ai.generation_error', {
+      model,
+      feature: 'web_skill_chat',
+      error: error?.message || String(error),
+    }, 'error');
+
+    return {
+      text: 'Maaf, sistem AI sedang mengalami gangguan teknis. Coba lagi nanti.',
+      model,
+      latencyMs: 0,
+      knowledgeMatches: knowledge.matches,
+      historyCount: history.length,
       fallback: true,
     };
   }

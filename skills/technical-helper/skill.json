@@ -1,0 +1,7 @@
+{
+  "id": "technical-helper",
+  "title": "Technical Helper",
+  "description": "Membantu debugging, coding, deployment, dan konfigurasi teknis.",
+  "triggers": ["error", "bug", "kode", "deploy", "docker", "github", "api", "database", "server", "konfigurasi"],
+  "modelHint": "chat"
+}

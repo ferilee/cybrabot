@@ -1,0 +1,7 @@
+{
+  "id": "internet-research",
+  "title": "Internet Research",
+  "description": "Membaca URL, repo GitHub, YouTube, atau mencari informasi web lewat Agent Reach.",
+  "triggers": ["http://", "https://", "github.com", "youtube.com", "youtu.be", "cari di internet", "baca web", "baca halaman", "riset internet"],
+  "modelHint": "chat"
+}

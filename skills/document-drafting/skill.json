@@ -1,0 +1,7 @@
+{
+  "id": "document-drafting",
+  "title": "Document Drafting",
+  "description": "Menyusun draft surat, pengumuman, proposal, notulen, caption, atau dokumen sekolah.",
+  "triggers": ["buatkan", "draft", "surat", "proposal", "notulen", "pengumuman", "caption", "dokumen"],
+  "modelHint": "chat"
+}

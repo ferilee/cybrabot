@@ -65,6 +65,7 @@ bun run start
 ## 🌐 Dashboard & API
 Setelah dijalankan, Anda dapat mengakses:
 - **Dashboard:** `http://localhost:4129/` (Visualisasi statistik bot)
+- **Web Chat:** `http://localhost:4129/chat` (Chat browser berbasis skill dan RAG lokal)
 - **Admin Panel:** `http://localhost:4129/admin` (Kelola runtime config, knowledge, dan reset preferensi user)
 - **Health Check:** `http://localhost:4129/health`
 - **Webhook Endpoint:** `http://localhost:4129/api/webhook`
@@ -76,6 +77,61 @@ Setelah dijalankan, Anda dapat mengakses:
 - **Knowledge Upsert:** `POST /admin/knowledge?token=...`
 - **Knowledge Delete:** `DELETE /admin/knowledge/:id?token=...`
 - **Reset User Preferences:** `POST /admin/preferences/reset?token=...`
+- **Web Chat Skills:** `GET /api/chat/skills`
+- **Web Chat Message:** `POST /api/chat`
+- **Agent Reach Status:** `GET /api/agent-reach/status`
+
+## 🧩 Web Chat Berbasis Skill
+CybraFeriBot sekarang menyediakan UI web chat di `/chat`.
+
+Arsitekturnya modular:
+- skill berada di folder `skills/<skill-id>/`
+- metadata skill ada di `skill.json`
+- workflow/prompt skill ada di `SKILL.md`
+- web chat otomatis memilih skill dari trigger, atau user bisa memilih manual dari sidebar
+- knowledge base lokal tetap dipakai sebagai RAG sederhana lewat folder `knowledge/`
+
+Skill bawaan:
+- `general-chat`
+- `document-drafting`
+- `internet-research`
+- `rag-research`
+- `technical-helper`
+
+### Agent Reach
+Web chat juga punya capability layer lokal yang terinspirasi dari Agent Reach:
+https://github.com/Panniantong/Agent-Reach
+
+Kemampuan awal:
+- `web`: membaca halaman publik via Jina Reader
+- `github`: membaca repo publik via `gh` CLI atau GitHub REST
+- `youtube`: membaca metadata/subtitle awal via `yt-dlp` bila tersedia
+- `search`: pencarian ringan via reader publik
+
+Status kanal bisa dicek di UI `/chat` atau endpoint:
+```bash
+curl http://localhost:4129/api/agent-reach/status
+```
+
+Catatan: implementasi ini adalah adapter internal yang mengikuti prinsip Agent Reach sebagai capability layer. Ini belum menginstal paket Python `agent-reach` langsung, supaya deployment Bun/Docker tetap sederhana.
+
+Untuk menambah skill baru, buat folder baru:
+```text
+skills/nama-skill/
+  skill.json
+  SKILL.md
+```
+
+Contoh `skill.json`:
+```json
+{
+  "id": "nama-skill",
+  "title": "Nama Skill",
+  "description": "Fungsi singkat skill.",
+  "triggers": ["kata kunci", "frasa pemicu"],
+  "modelHint": "chat"
+}
+```
 
 Contoh update konfigurasi admin:
 ```bash
