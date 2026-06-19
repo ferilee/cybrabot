@@ -999,6 +999,11 @@ function renderWebChatPage(session: WebSession) {
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+      <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+      <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+      <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+      <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
       <style>
         :root {
           --sky-top: #72a7d5;
@@ -1439,13 +1444,95 @@ function renderWebChatPage(session: WebSession) {
           overflow-wrap: anywhere;
           font-size: 13px;
           line-height: 1.55;
-          white-space: pre-wrap;
+        }
+        .message-content > :first-child {
+          margin-top: 0;
+        }
+        .message-content > :last-child {
+          margin-bottom: 0;
+        }
+        .message-content p,
+        .message-content ul,
+        .message-content ol,
+        .message-content pre,
+        .message-content blockquote,
+        .message-content table,
+        .message-content h1,
+        .message-content h2,
+        .message-content h3,
+        .message-content h4 {
+          margin: 0 0 12px;
+        }
+        .message-content ul,
+        .message-content ol {
+          padding-left: 20px;
+        }
+        .message-content li + li {
+          margin-top: 4px;
+        }
+        .message-content pre {
+          overflow-x: auto;
+          padding: 12px 14px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.08);
+        }
+        .message-row.user .message-content pre {
+          background: rgba(16,35,51,0.08);
+        }
+        .message-content pre code {
+          padding: 0;
+          background: transparent;
         }
         .message-content code {
           padding: 2px 5px;
           border-radius: 5px;
           background: rgba(255,255,255,0.12);
           font-size: 0.9em;
+        }
+        .message-content blockquote {
+          padding-left: 14px;
+          border-left: 3px solid rgba(255,255,255,0.2);
+          color: rgba(255,255,255,0.76);
+        }
+        .message-row.user .message-content blockquote {
+          border-left-color: rgba(16,35,51,0.18);
+          color: rgba(16,35,51,0.76);
+        }
+        .message-content table {
+          width: 100%;
+          border-collapse: collapse;
+          overflow: hidden;
+          border-radius: 12px;
+          font-size: 12px;
+          background: rgba(255,255,255,0.04);
+        }
+        .message-row.user .message-content table {
+          background: rgba(16,35,51,0.04);
+        }
+        .message-content thead {
+          background: rgba(255,255,255,0.08);
+        }
+        .message-row.user .message-content thead {
+          background: rgba(16,35,51,0.08);
+        }
+        .message-content th,
+        .message-content td {
+          padding: 10px 12px;
+          text-align: left;
+          vertical-align: top;
+          border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .message-row.user .message-content th,
+        .message-row.user .message-content td {
+          border-bottom-color: rgba(16,35,51,0.08);
+        }
+        .message-content tr:last-child td {
+          border-bottom: 0;
+        }
+        .message-content .katex-display {
+          overflow-x: auto;
+          overflow-y: hidden;
+          padding: 6px 2px;
         }
         .message-row.user .message-content code { background: rgba(16,35,51,0.09); }
         .message-actions {
@@ -1735,14 +1822,68 @@ function renderWebChatPage(session: WebSession) {
             .replace(/'/g, '&#39;');
         }
 
-        function renderMarkdownLite(text) {
-          const escaped = escapeHtml(text);
-          return escaped
-            .replace(/^### (.*)$/gm, '<strong>$1</strong>')
-            .replace(/^## (.*)$/gm, '<strong>$1</strong>')
-            .replace(/^# (.*)$/gm, '<strong>$1</strong>')
-            .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')
-            .replace(/\\\`([^\\\`]+)\\\`/g, '<code>$1</code>');
+        function stashMathExpressions(text) {
+          const placeholders = [];
+          let nextText = String(text || '');
+
+          const stash = (raw) => {
+            const key = 'CYBRA_MATH_' + placeholders.length + '_TOKEN';
+            placeholders.push({ key, raw });
+            return key;
+          };
+
+          nextText = nextText.replace(/\\\[([\s\S]+?)\\\]/g, (match) => stash(match));
+          nextText = nextText.replace(/\\\(([\s\S]+?)\\\)/g, (match) => stash(match));
+          nextText = nextText.replace(/\$\$([\s\S]+?)\$\$/g, (match) => stash(match));
+          nextText = nextText.replace(/(^|[^\\])\$([^\n$]+?)\$/g, (match, prefix, expr) => prefix + stash('$' + expr + '$'));
+
+          return { text: nextText, placeholders };
+        }
+
+        function restoreMathExpressions(text, placeholders) {
+          return placeholders.reduce((acc, item) => acc.replaceAll(item.key, item.raw), text);
+        }
+
+        function renderRichContent(text) {
+          const source = String(text || '');
+          const markdown = window.marked;
+          const purifier = window.DOMPurify;
+
+          if (!markdown || !purifier) {
+            return '<p>' + escapeHtml(source) + '</p>';
+          }
+
+          const stashed = stashMathExpressions(source.replace(/\r\n/g, '\n'));
+          markdown.setOptions({
+            gfm: true,
+            breaks: true,
+            headerIds: false,
+            mangle: false,
+          });
+
+          const parsed = markdown.parse(stashed.text);
+          const sanitized = purifier.sanitize(parsed, {
+            USE_PROFILES: { html: true },
+          });
+
+          return restoreMathExpressions(String(sanitized || ''), stashed.placeholders);
+        }
+
+        function renderMath(container) {
+          if (!container || typeof window.renderMathInElement !== 'function') {
+            return;
+          }
+
+          window.renderMathInElement(container, {
+            delimiters: [
+              { left: '$$', right: '$$', display: true },
+              { left: '\\\\[', right: '\\\\]', display: true },
+              { left: '$', right: '$', display: false },
+              { left: '\\\\(', right: '\\\\)', display: false },
+            ],
+            throwOnError: false,
+            strict: 'ignore',
+          });
         }
 
         function renderMetaTags(meta = {}) {
@@ -1786,13 +1927,15 @@ function renderWebChatPage(session: WebSession) {
           }).format(new Date());
           const label = role === 'user' ? 'Kamu' : 'Cybra';
           const detail = meta.skillTitle || meta.route || '';
+          const contentHtml = renderRichContent(content);
           bubble.innerHTML =
             '<div class="message-meta"><strong>' + label + '</strong><span>' + escapeHtml(time) + '</span>' +
             (detail ? '<span>· ' + escapeHtml(detail) + '</span>' : '') +
-            '</div><div class="message-content">' + renderMarkdownLite(content) + '</div>' +
+            '</div><div class="message-content">' + contentHtml + '</div>' +
             renderMessageActions(meta) + renderMetaTags(meta);
           row.append(avatar, bubble);
           messages.appendChild(row);
+          renderMath(bubble.querySelector('.message-content'));
           messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
         }
 

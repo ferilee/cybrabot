@@ -492,6 +492,10 @@ describe('api endpoints', () => {
     expect(guestSkills.status).toBe(401);
     expect((await health.json() as { status: string }).status).toBe('ok');
     expect(visitorChat.status).toBe(200);
+    const visitorChatHtml = await visitorChat.text();
+    expect(visitorChatHtml).toContain('katex.min.css');
+    expect(visitorChatHtml).toContain('marked.min.js');
+    expect(visitorChatHtml).toContain('renderMathInElement');
     expect(visitorDashboard.status).toBe(302);
     expect(visitorDashboard.headers.get('location')).toBe('/chat');
     expect(adminDashboard.status).toBe(200);
