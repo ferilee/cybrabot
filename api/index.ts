@@ -5,7 +5,7 @@ import { getAdminConfig, isValidAdminToken, saveAdminConfig } from '../lib/admin
 import { deleteKnowledgeDocument, listKnowledgeDocuments, saveKnowledgeDocument } from '../lib/knowledge';
 import { getProviderQuotaStatus } from '../lib/provider-status';
 import { resetUserPreferences } from '../lib/preferences';
-import { getWebChatSkills, handleWebChat } from '../lib/web-chat';
+import { getManagedExportFile, getWebChatSkills, handleWebChat } from '../lib/web-chat';
 import { getAgentReachStatus } from '../lib/agent-reach';
 import { db } from '../db';
 import { users, messages, telemetryEvents } from '../db/schema';
@@ -991,6 +991,28 @@ function renderWebChatPage() {
           text-overflow: ellipsis;
           white-space: nowrap;
         }
+        .meta-pills {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 8px;
+        }
+        .meta-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 4px 8px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 999px;
+          color: rgba(255,255,255,0.76);
+          background: rgba(8,30,48,0.22);
+          font-size: 10px;
+        }
+        .meta-chip.alert {
+          color: #ffe7b5;
+          border-color: rgba(255,213,122,0.24);
+          background: rgba(117,79,11,0.22);
+        }
         .icon-button {
           display: grid;
           width: 36px;
@@ -1120,6 +1142,32 @@ function renderWebChatPage() {
           font-size: 0.9em;
         }
         .message-row.user .message-content code { background: rgba(16,35,51,0.09); }
+        .message-tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 10px;
+        }
+        .message-tag {
+          display: inline-flex;
+          align-items: center;
+          padding: 3px 8px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.1);
+          color: rgba(255,255,255,0.76);
+          font-size: 9px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+        .message-row.user .message-tag {
+          background: rgba(16,35,51,0.08);
+          color: rgba(16,35,51,0.62);
+        }
+        .message-tag.warn {
+          background: rgba(243,178,55,0.16);
+          color: #ffd998;
+        }
         .typing .bubble { flex: 0 0 auto; padding-right: 28px; }
         .typing-dots { display: flex; gap: 4px; padding: 6px 0 2px; }
         .typing-dots span {
@@ -1362,6 +1410,16 @@ function renderWebChatPage() {
             .replace(/\\\`([^\\\`]+)\\\`/g, '<code>$1</code>');
         }
 
+        function renderMetaTags(meta = {}) {
+          const tags = [];
+          if (meta.skillTitle) tags.push('<span class="message-tag">skill: ' + escapeHtml(meta.skillTitle) + '</span>');
+          if (meta.intent) tags.push('<span class="message-tag">intent: ' + escapeHtml(meta.intent) + '</span>');
+          if (meta.model) tags.push('<span class="message-tag">model: ' + escapeHtml(meta.model) + '</span>');
+          if (meta.fallback) tags.push('<span class="message-tag warn">fallback</span>');
+          if (meta.route && !meta.skillTitle) tags.push('<span class="message-tag">' + escapeHtml(meta.route) + '</span>');
+          return tags.length ? '<div class="message-tags">' + tags.join('') + '</div>' : '';
+        }
+
         function addMessage(role, content, meta = {}) {
           if (welcome) welcome.hidden = true;
           document.getElementById('typingMessage')?.remove();
@@ -1381,10 +1439,20 @@ function renderWebChatPage() {
           bubble.innerHTML =
             '<div class="message-meta"><strong>' + label + '</strong><span>' + escapeHtml(time) + '</span>' +
             (detail ? '<span>· ' + escapeHtml(detail) + '</span>' : '') +
-            '</div><div class="message-content">' + renderMarkdownLite(content) + '</div>';
+            '</div><div class="message-content">' + renderMarkdownLite(content) + '</div>' + renderMetaTags(meta);
           row.append(avatar, bubble);
           messages.appendChild(row);
           messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+        }
+
+        function updateHeaderMeta(meta = {}) {
+          const chips = [];
+          chips.push('<span class="meta-chip">skill: ' + escapeHtml(meta.skillTitle || 'auto') + '</span>');
+          if (meta.intent) chips.push('<span class="meta-chip">intent: ' + escapeHtml(meta.intent) + '</span>');
+          if (meta.intentModel) chips.push('<span class="meta-chip">intent-model: ' + escapeHtml(meta.intentModel) + '</span>');
+          if (meta.model) chips.push('<span class="meta-chip">model: ' + escapeHtml(meta.model) + '</span>');
+          if (meta.fallback) chips.push('<span class="meta-chip alert">fallback active</span>');
+          modelStatus.innerHTML = chips.join('');
         }
 
         function showTyping() {
@@ -1476,8 +1544,18 @@ function renderWebChatPage() {
             addMessage('assistant', data.reply || '', {
               skillTitle: data.skill?.title,
               route: data.route,
+              intent: data.intent,
+              intentModel: data.intentModel,
+              model: data.model,
+              fallback: data.fallback,
             });
-            modelStatus.textContent = data.model || data.route || 'OK';
+            updateHeaderMeta({
+              skillTitle: data.skill?.title,
+              intent: data.intent,
+              intentModel: data.intentModel,
+              model: data.model,
+              fallback: data.fallback,
+            });
             state.history.push({ role: 'assistant', content: data.reply || '' });
             persistHistory();
           } catch (error) {
@@ -1511,7 +1589,7 @@ function renderWebChatPage() {
           persistHistory();
           messages.querySelectorAll('.message-row').forEach((item) => item.remove());
           if (welcome) welcome.hidden = false;
-          modelStatus.textContent = 'Model otomatis';
+          updateHeaderMeta({});
           input.focus();
         });
 
@@ -1529,6 +1607,7 @@ function renderWebChatPage() {
           for (const item of state.history) {
             addMessage(item.role, item.content, { route: 'riwayat' });
           }
+          updateHeaderMeta({});
           input.focus();
         }).catch(() => {
           addMessage('assistant', 'Sebagian layanan pendukung belum berhasil dimuat. Chat tetap bisa dicoba.', { route: 'peringatan' });
@@ -1798,6 +1877,19 @@ app.get('/api/chat/skills', (c) => {
 
 app.get('/api/agent-reach/status', (c) => {
   return c.json({ channels: getAgentReachStatus() });
+});
+
+app.get('/api/exports/:fileName', async (c) => {
+  const fileName = c.req.param('fileName');
+  const filePath = getManagedExportFile(fileName);
+  if (!filePath) {
+    return c.text('Not Found', 404);
+  }
+
+  return c.body(await Bun.file(filePath).bytes(), 200, {
+    'content-type': 'text/markdown; charset=utf-8',
+    'content-disposition': `attachment; filename="${fileName}"`,
+  });
 });
 
 app.post('/api/chat', async (c) => {

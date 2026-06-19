@@ -1,9 +1,10 @@
 import { getAdminConfig } from './admin-config';
-import { runAgentReach } from './agent-reach';
-import { generateSkillResponse, type ChatHistoryItem } from './ai';
+import type { ChatHistoryItem } from './ai';
+import { resolveManagedExportPath } from './humanis-export';
 import { logEvent } from './observability';
+import { runSkillChat } from './skill-chat';
 import { runLocalTool } from './tools';
-import { loadWebSkills, selectWebSkill } from './web-skills';
+import { loadWebSkills } from './web-skills';
 
 export type WebChatHistoryItem = {
   role: 'user' | 'assistant';
@@ -50,19 +51,22 @@ export async function handleWebChat(input: WebChatRequest) {
       route: 'validation',
       skill: null,
       model: null,
+      intent: null,
+      intentModel: null,
       latencyMs: 0,
       knowledgeMatches: [],
       fallback: false,
+      reach: null,
+      exportFile: null,
     };
   }
 
   const adminConfig = await getAdminConfig();
-  const skill = selectWebSkill(message, input.skillId);
   const toolResult = runLocalTool(message, adminConfig);
 
   if (toolResult.handled && toolResult.response) {
     await logEvent('web_chat.tool_used', {
-      skillId: skill?.id || null,
+      skillId: null,
       toolName: toolResult.toolName,
       durationMs: Date.now() - startedAt,
     });
@@ -70,81 +74,58 @@ export async function handleWebChat(input: WebChatRequest) {
     return {
       reply: stripHtml(toolResult.response),
       route: 'tool',
-      skill: skill ? { id: skill.id, title: skill.title } : null,
+      skill: null,
       model: 'local',
+      intent: 'casual',
+      intentModel: null,
       latencyMs: Date.now() - startedAt,
       knowledgeMatches: [],
       fallback: false,
+      reach: null,
+      exportFile: null,
     };
   }
 
-  if (!skill) {
-    return {
-      reply: 'Belum ada skill web chat yang tersedia.',
-      route: 'no_skill',
-      skill: null,
-      model: null,
-      latencyMs: 0,
-      knowledgeMatches: [],
-      fallback: true,
-    };
-  }
-
-  let externalContext = '';
-  let reachMetadata: Record<string, unknown> | null = null;
-  if (skill.id === 'internet-research') {
-    try {
-      const reach = await runAgentReach(message);
-      externalContext =
-        `Agent Reach channel: ${reach.channel}\n` +
-        `Backend: ${reach.backend}\n` +
-        `Sources: ${reach.sources.join(', ')}\n\n` +
-        `${reach.content}`;
-      reachMetadata = {
-        channel: reach.channel,
-        backend: reach.backend,
-        sources: reach.sources,
-      };
-    } catch (error) {
-      externalContext =
-        `Agent Reach gagal mengambil konteks eksternal: ${String(error)}\n` +
-        `Jawab dengan menjelaskan keterbatasan ini dan berikan langkah yang bisa dilakukan user.`;
-      reachMetadata = {
-        error: String(error),
-      };
-    }
-  }
-
-  const response = await generateSkillResponse({
+  const response = await runSkillChat({
     message,
     history: toAiHistory(input.history),
-    skillTitle: skill.title,
-    skillInstructions: skill.instructions,
-    externalContext,
     adminConfig,
+    requestedSkillId: input.skillId,
   });
 
   await logEvent('web_chat.ai_used', {
-    skillId: skill.id,
+    skillId: response.skill?.id || null,
+    intent: response.intent,
+    intentModel: response.intentModel,
     model: response.model,
     latencyMs: response.latencyMs,
     knowledgeMatches: response.knowledgeMatches,
     fallback: response.fallback,
     durationMs: Date.now() - startedAt,
-    reach: reachMetadata,
+    reach: response.reach,
   });
 
   return {
-    reply: response.text,
-    route: 'skill_ai',
-    skill: {
-      id: skill.id,
-      title: skill.title,
-    },
+    reply: response.reply,
+    route: response.route,
+    skill: response.skill,
     model: response.model,
+    intent: response.intent,
+    intentModel: response.intentModel,
     latencyMs: response.latencyMs,
     knowledgeMatches: response.knowledgeMatches,
-    reach: reachMetadata,
+    reach: response.reach,
     fallback: response.fallback,
+    exportFile: response.exportFile
+      ? {
+          fileName: response.exportFile.fileName,
+          format: response.exportFile.format,
+          downloadUrl: `/api/exports/${encodeURIComponent(response.exportFile.fileName)}`,
+        }
+      : null,
   };
+}
+
+export function getManagedExportFile(fileName: string) {
+  return resolveManagedExportPath(fileName);
 }

@@ -30,6 +30,12 @@ const openAIClient = openAIApiKey
 
 const intentModel = process.env.GEMINI_INTENT_MODEL || 'gemini-2.5-flash-lite';
 const chatModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const geminiFallbackModel = process.env.GEMINI_FALLBACK_MODEL || intentModel;
+const openAICompatibleFallbackModel =
+  process.env.OPENAI_FALLBACK_MODEL ||
+  process.env.OPENAI_COMPAT_FALLBACK_MODEL ||
+  process.env.TOKENROUTER_FALLBACK_MODEL ||
+  '';
 const historyLimit = Number(process.env.CHAT_HISTORY_LIMIT || 10);
 
 export type ChatHistoryItem = {
@@ -126,6 +132,20 @@ Gunakan format plain text terstruktur dengan aturan berikut:
 
 Fokus pada hasil dokumen final, bukan penjelasan proses.`;
 
+function stripModelReasoning(raw: string) {
+  if (!raw) {
+    return '';
+  }
+
+  return raw
+    .replace(/<think[\s\S]*?<\/think>/gi, ' ')
+    .replace(/<\/?thinking>/gi, ' ')
+    .replace(/^\s*<\|assistant\|>\s*/gi, '')
+    .replace(/^\s*(thought|thinking|reasoning|analysis)\s*:\s*.*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function formatHistory(history: ChatHistoryItem[]) {
   if (!history.length) {
     return '';
@@ -171,8 +191,43 @@ function parseModelSpec(spec: string) {
   return { provider: 'gemini' as const, model: trimmed };
 }
 
-async function generateText(model: string, instructions: string, input: string) {
-  const startedAt = Date.now();
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetriableAiError(error: unknown) {
+  const text = String((error as { message?: string })?.message || error || '').toLowerCase();
+  return (
+    text.includes('503') ||
+    text.includes('unavailable') ||
+    text.includes('high demand') ||
+    text.includes('overloaded') ||
+    text.includes('rate limit') ||
+    text.includes('429') ||
+    text.includes('resource exhausted')
+  );
+}
+
+function buildModelCandidates(model: string) {
+  const candidates = [model.trim()];
+  const parsed = parseModelSpec(model);
+
+  if (parsed.provider === 'gemini') {
+    if (geminiFallbackModel && geminiFallbackModel.trim() && geminiFallbackModel.trim() !== model.trim()) {
+      candidates.push(geminiFallbackModel.trim());
+    }
+
+    if (openAIClient && openAICompatibleFallbackModel.trim()) {
+      candidates.push(openAICompatibleFallbackModel.trim());
+    }
+  } else if (openAICompatibleFallbackModel.trim() && openAICompatibleFallbackModel.trim() !== model.trim()) {
+    candidates.push(openAICompatibleFallbackModel.trim());
+  }
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+async function generateWithSingleModel(model: string, instructions: string, input: string) {
   const parsed = parseModelSpec(model);
 
   if (parsed.provider === 'tokenrouter') {
@@ -189,8 +244,8 @@ async function generateText(model: string, instructions: string, input: string) 
     });
 
     return {
-      text: response.choices[0]?.message?.content?.trim() || '',
-      latencyMs: Date.now() - startedAt,
+      text: stripModelReasoning(response.choices[0]?.message?.content?.trim() || ''),
+      model,
     };
   }
 
@@ -203,9 +258,49 @@ async function generateText(model: string, instructions: string, input: string) 
   });
 
   return {
-    text: response.text?.trim() || '',
-    latencyMs: Date.now() - startedAt,
+    text: stripModelReasoning(response.text?.trim() || ''),
+    model,
   };
+}
+
+async function generateText(model: string, instructions: string, input: string) {
+  const startedAt = Date.now();
+  const candidates = buildModelCandidates(model);
+  let lastError: unknown = null;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    if (!candidate) {
+      continue;
+    }
+    const maxAttempts = index === 0 ? 2 : 1;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const result = await generateWithSingleModel(candidate, instructions, input);
+        return {
+          text: result.text,
+          model: result.model,
+          latencyMs: Date.now() - startedAt,
+        };
+      } catch (error) {
+        lastError = error;
+        const retriable = isRetriableAiError(error);
+        const hasMoreAttempts = attempt < maxAttempts;
+
+        if (retriable && hasMoreAttempts) {
+          await sleep(800 * attempt);
+          continue;
+        }
+
+        if (!retriable) {
+          throw error;
+        }
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Unknown AI generation error'));
 }
 
 export async function getIntent(message: string, adminConfig?: Pick<AdminConfig, 'models'>): Promise<IntentResult> {
@@ -250,14 +345,14 @@ export async function generateResponse(
         subtitle: 'Chat santai',
         badge: 'AI',
         fields: [
-          { label: 'Model', value: model },
+          { label: 'Model', value: result.model },
           { label: 'Knowledge', value: String(knowledge.matches.length) },
           { label: 'Context', value: String(history.length) },
           { label: 'Latency', value: `${result.latencyMs} ms` },
         ],
         bodyHtml: formatTelegramRichText(result.text),
       }),
-      model,
+      model: result.model,
       latencyMs: result.latencyMs,
       knowledgeMatches: knowledge.matches,
       historyCount: history.length,
@@ -306,14 +401,14 @@ export async function generateTechnicalResponse(
         subtitle: 'Mode praktis',
         badge: 'TECH',
         fields: [
-          { label: 'Model', value: model },
+          { label: 'Model', value: result.model },
           { label: 'Knowledge', value: String(knowledge.matches.length) },
           { label: 'Context', value: String(history.length) },
           { label: 'Latency', value: `${result.latencyMs} ms` },
         ],
         bodyHtml: formatTelegramRichText(result.text),
       }),
-      model,
+      model: result.model,
       latencyMs: result.latencyMs,
       knowledgeMatches: knowledge.matches,
       historyCount: history.length,
@@ -367,7 +462,7 @@ export async function generateDocumentDraft(
     return {
       text: result.text,
       title: firstTitleLine?.slice(2).trim() || 'Dokumen CybraFeriBot',
-      model,
+      model: result.model,
       latencyMs: result.latencyMs,
       fallback: false,
     };
@@ -396,9 +491,11 @@ export async function generateSkillResponse(input: {
   const model = resolveModel(input.adminConfig?.models.chat, chatModel);
   const instructions =
     `Anda adalah @CybraFeriBot dalam mode web chat berbasis skill.\n` +
-    `Gunakan bahasa Indonesia yang jelas, akurat, praktis, humanis, dan santai.\n` +
-    `Boleh gunakan humor ringan jika cocok dengan konteks, tetapi jangan mengorbankan ketepatan jawaban.\n` +
-    `Jangan terdengar seperti template robot; jawab seperti rekan kerja yang sigap dan enak diajak ngobrol.\n` +
+    `Jawab seperti manusia yang sedang ngobrol santai: natural, hangat, dan enak dibaca.\n` +
+    `Utamakan bahasa Indonesia yang luwes, bukan gaya dokumen, bukan gaya memo, dan bukan gaya template customer service.\n` +
+    `Boleh gunakan humor ringan jika cocok, tetapi jangan dipaksa.\n` +
+    `Kalau konteksnya sederhana, cukup jawab singkat dan langsung. Tidak perlu terlalu formal.\n` +
+    `Jangan tampilkan proses berpikir internal, catatan analisis, atau tag seperti <think>. Langsung berikan jawaban final untuk user.\n` +
     `Skill aktif: ${input.skillTitle}\n\n` +
     `${input.skillInstructions}\n\n` +
     `Jika pengetahuan lokal tidak cukup, jelaskan asumsi dan jangan mengarang fakta spesifik.`;
@@ -416,7 +513,7 @@ export async function generateSkillResponse(input: {
 
     return {
       text: result.text,
-      model,
+      model: result.model,
       latencyMs: result.latencyMs,
       knowledgeMatches: knowledge.matches,
       historyCount: history.length,

@@ -62,7 +62,7 @@ export function getWebSkill(skillId: string) {
   return loadWebSkills().find((skill) => skill.id === skillId) || null;
 }
 
-export function selectWebSkill(message: string, requestedSkillId?: string) {
+export function selectWebSkill(message: string, requestedSkillId?: string, intentHint?: 'technical' | 'casual') {
   if (requestedSkillId) {
     const requested = getWebSkill(requestedSkillId);
     if (requested) {
@@ -75,11 +75,25 @@ export function selectWebSkill(message: string, requestedSkillId?: string) {
     .map((skill) => {
       const score = skill.triggers.reduce((total, trigger) => {
         const normalizedTrigger = normalize(trigger);
-        return total + (normalizedTrigger && normalizedMessage.includes(normalizedTrigger) ? 1 : 0);
+        if (!normalizedTrigger || !normalizedMessage.includes(normalizedTrigger)) {
+          return total;
+        }
+
+        const weight = normalizedTrigger.split(' ').filter(Boolean).length;
+        return total + Math.max(1, weight);
       }, 0);
       return { skill, score };
     })
     .sort((a, b) => b.score - a.score);
 
-  return scored.find((item) => item.score > 0)?.skill || getWebSkill('general-chat') || scored[0]?.skill || null;
+  const matched = scored.find((item) => item.score > 0)?.skill;
+  if (matched) {
+    return matched;
+  }
+
+  if (intentHint === 'technical') {
+    return getWebSkill('technical-helper') || getWebSkill('general-chat') || scored[0]?.skill || null;
+  }
+
+  return getWebSkill('general-chat') || scored[0]?.skill || null;
 }

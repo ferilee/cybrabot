@@ -6,7 +6,7 @@ import { db } from '../db';
 import { users, messages } from '../db/schema';
 import { desc, eq } from 'drizzle-orm';
 import { analyzeText } from '../lib/nlp';
-import { generateDocumentDraft, generateResponse, generateTechnicalResponse, getIntent, type ChatHistoryItem } from '../lib/ai';
+import { generateDocumentDraft, getIntent, type ChatHistoryItem } from '../lib/ai';
 import { getAdminConfig, isOpenAICompatibleConfigured, saveAdminConfig } from '../lib/admin-config';
 import { answerQuestionAboutDocument, explainDocumentFeatureError, summarizeDocumentFromPath } from '../lib/document-ai';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
@@ -15,8 +15,9 @@ import { deleteKnowledgeDocument, saveKnowledgeDocument } from '../lib/knowledge
 import { getProviderQuotaStatus } from '../lib/provider-status';
 import { logEvent } from '../lib/observability';
 import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
+import { runSkillChat } from '../lib/skill-chat';
 import { runLocalTool } from '../lib/tools';
-import { escapeHtml, formatTelegramRichCard } from '../lib/telegram-rich';
+import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText } from '../lib/telegram-rich';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -1381,91 +1382,61 @@ bot.on('message:text', async (ctx) => {
       return;
     }
 
-    if (intentResult.intent === 'technical') {
-      const response = await generateTechnicalResponse(text, history, preferences, adminConfig);
-      await logEvent('message.ai_used', {
-        userId,
-        route: 'technical',
-        model: response.model,
-        latencyMs: response.latencyMs,
-        historyCount: response.historyCount,
-        knowledgeMatches: response.knowledgeMatches,
-        fallback: response.fallback,
-      });
-      await replySafely(ctx, response.text);
+    const response = await runSkillChat({
+      message: text,
+      history,
+      adminConfig,
+      intentHint: intentResult,
+    });
+    const telegramReply = formatTelegramRichCardWithBody({
+      title: response.skill?.title || 'Jawaban CybraFeriBot',
+      subtitle: response.intent === 'technical' ? 'Mode skill teknis' : 'Mode skill chat',
+      badge: response.skill?.id || 'AI',
+      fields: [
+        { label: 'Model', value: response.model || adminConfig.models.chat },
+        { label: 'Intent', value: response.intent },
+        { label: 'Skill', value: response.skill?.title || 'Auto' },
+        { label: 'Latency', value: `${response.latencyMs} ms` },
+      ],
+      bodyHtml: formatTelegramRichText(response.reply),
+    });
 
-      await db.insert(messages).values({
-        userId,
-        content: response.text,
-        role: 'bot',
-        intent: 'technical',
-      });
+    await logEvent('message.ai_used', {
+      userId,
+      route: response.route,
+      skillId: response.skill?.id || null,
+      intent: response.intent,
+      intentModel: response.intentModel,
+      model: response.model,
+      latencyMs: response.latencyMs,
+      knowledgeMatches: response.knowledgeMatches,
+      fallback: response.fallback,
+      reach: response.reach,
+    });
+    await replySafely(ctx, telegramReply);
 
-      await logEvent('message.completed', {
-        userId,
-        route: 'technical_ai',
-        durationMs: Date.now() - startedAt,
-      });
-    } else {
-      // 4. Local Keyword Handling (to save AI quota)
-      if (lowerText.includes('feri lee') || lowerText.includes('mas feri') || lowerText.includes('/about')) {
-        const feriInfo = `
-<b>Mas Feri Dwi Hermawan (atau Mas Feri Lee)</b> ini bisa dibilang sosok "Guru SMK Paket Lengkap".
-
-Di satu sisi, Mas Feri adalah abdi negara yang mengajar Matematika di <b>SMKN Pasirian, Lumajang</b>, bahkan dipercaya jadi Ketua MGMP Matematika SMK se-Kabupaten Lumajang. Tapi di sisi lain, beliau adalah tech enthusiast yang "ngoprek"-nya sudah level tinggi.
-
-<b>Beberapa hal unik tentang beliau:</b>
-• <b>Guru Melek Teknologi:</b> Ngebangun ekosistem digital lewat proyek Guru Melek AI & Akademi Inovasi Guru (IDT).
-• <b>Skill Developer:</b> Fasih coding (Bun, Hono, React) dan edit video sinematik.
-• <b>Sangat Rapi:</b> Ahli bikin sistem otomatis sekolah & website silsilah keluarga.
-• <b>Sisi Personal:</b> Penikmat kopi hitam & sangat menghargai sejarah keluarga.
-
-Singkatnya, beliau adalah pendidik modern yang selalu haus belajar hal baru! 🚀☕️`;
-        await replySafely(ctx, feriInfo);
-        
-        // Save Response to DB
-        await db.insert(messages).values({
-          userId,
-          content: feriInfo,
-          role: 'bot',
-          intent: 'casual',
-        });
-
-        await logEvent('message.completed', {
-          userId,
-          route: 'local_about',
-          durationMs: Date.now() - startedAt,
-        });
-        return;
-      }
-
-      // 5. Casual Chat with LLM
-      const response = await generateResponse(text, history, preferences, adminConfig);
-      await logEvent('message.ai_used', {
-        userId,
-        route: 'casual',
-        model: response.model,
-        latencyMs: response.latencyMs,
-        historyCount: response.historyCount,
-        knowledgeMatches: response.knowledgeMatches,
-        fallback: response.fallback,
-      });
-      await replySafely(ctx, response.text);
-      
-      // Save Bot Response
-      await db.insert(messages).values({
-        userId,
-        content: response.text,
-        role: 'bot',
-        intent: 'casual',
-      });
-
-      await logEvent('message.completed', {
-        userId,
-        route: 'casual_ai',
-        durationMs: Date.now() - startedAt,
+    if (response.exportFile) {
+      await ctx.replyWithDocument(new InputFile(response.exportFile.outputPath, response.exportFile.fileName), {
+        caption:
+          `Berikut file markdown hasil penjelasan humanis.\n` +
+          `<b>Skill:</b> ${response.skill?.title || 'Penjelasan Humanis'}\n` +
+          `<b>Format:</b> MD`,
+        parse_mode: 'HTML',
       });
     }
+
+    await db.insert(messages).values({
+      userId,
+      content: telegramReply,
+      role: 'bot',
+      intent: response.skill?.id || response.intent,
+    });
+
+    await logEvent('message.completed', {
+      userId,
+      route: `skill_${response.skill?.id || response.intent}`,
+      durationMs: Date.now() - startedAt,
+    });
   } catch (error) {
     await logEvent('message.failed', {
       userId: ctx?.from?.id,

@@ -8,7 +8,7 @@ type KnowledgeDocument = {
   tokens: string[];
 };
 
-const knowledgeDir = join(import.meta.dir, '..', 'knowledge');
+const knowledgeDir = process.env.KNOWLEDGE_DIR?.trim() || join(import.meta.dir, '..', 'knowledge');
 mkdirSync(knowledgeDir, { recursive: true });
 
 function normalize(text: string) {

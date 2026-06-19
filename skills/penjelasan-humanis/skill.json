@@ -1,0 +1,28 @@
+{
+  "id": "penjelasan-humanis",
+  "title": "Penjelasan Humanis",
+  "description": "Menjelaskan topik teknis atau kompleks dengan bahasa awam yang hangat, analogi nyata, dan istilah teknis tetap utuh.",
+  "triggers": [
+    "jelaskan dengan bahasa awam",
+    "bahasa awam saja",
+    "bahasa user awam",
+    "penjelasan humanis",
+    "gaya humanis",
+    "bukan kayak textbook",
+    "bukan kayak buku teks",
+    "gaya ngobrol",
+    "kayak ngobrol aja",
+    "kasih analogi",
+    "ada analoginya",
+    "buku referensi bukan textbook",
+    "simple aja",
+    "gampang dicerna",
+    "explain like i'm 5",
+    "plain language explanation",
+    "eli5",
+    "with analogies",
+    "humanistic tone",
+    "not too technical"
+  ],
+  "modelHint": "chat"
+}

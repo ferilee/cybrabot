@@ -35,6 +35,20 @@ export type DocumentSummaryResult = {
   extractedText?: string;
 };
 
+function stripModelReasoning(raw: string) {
+  if (!raw) {
+    return '';
+  }
+
+  return raw
+    .replace(/<think[\s\S]*?<\/think>/gi, ' ')
+    .replace(/<\/?thinking>/gi, ' ')
+    .replace(/^\s*<\|assistant\|>\s*/gi, '')
+    .replace(/^\s*(thought|thinking|reasoning|analysis)\s*:\s*.*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -168,7 +182,7 @@ async function generateTextWithModelSpec(modelSpec: string | undefined, instruct
     });
 
     return {
-      text: response.choices[0]?.message?.content?.trim() || '',
+      text: stripModelReasoning(response.choices[0]?.message?.content?.trim() || ''),
       latencyMs: Date.now() - startedAt,
       model: modelSpec?.trim() || `${parsed.provider}:${parsed.model}`,
     };
@@ -183,7 +197,7 @@ async function generateTextWithModelSpec(modelSpec: string | undefined, instruct
   });
 
   return {
-    text: response.text?.trim() || '',
+    text: stripModelReasoning(response.text?.trim() || ''),
     latencyMs: Date.now() - startedAt,
     model: modelSpec?.trim() || parsed.model,
   };
@@ -218,7 +232,7 @@ export async function summarizeDocumentFromPath(
     const response = await generateTextWithModelSpec(
       modelOverride,
       `Anda adalah @CybraFeriBot, asisten yang menyiapkan isi dokumen untuk diekspor menjadi PDF atau DOCX.\n` +
-      `Buat isi dokumen dalam bahasa Indonesia yang rapi, langsung siap diekspor.\n` +
+      `Buat isi dokumen dalam bahasa Indonesia yang rapi, natural, dan langsung siap diekspor.\n` +
       `Gunakan format plain text terstruktur dengan aturan berikut:\n` +
       `- Baris judul utama diawali "# "\n` +
       `- Subjudul diawali "## "\n` +
@@ -226,7 +240,8 @@ export async function summarizeDocumentFromPath(
       `- Paragraf biasa tanpa markup lain\n` +
       `- Jangan gunakan markdown selain pola di atas\n` +
       `- Jangan gunakan tabel\n` +
-      `- Jangan sertakan penjelasan pembuka seperti "berikut adalah"`,
+      `- Jangan sertakan penjelasan pembuka seperti "berikut adalah"\n` +
+      `- Jangan tampilkan catatan analisis internal atau reasoning model`,
       buildPromptForTextDocument(extractedText, prompt),
     );
 

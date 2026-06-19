@@ -5,7 +5,10 @@
     "start": "bun index.ts",
     "bot:polling": "bun --hot bot/polling.ts",
     "db:init": "bun db/bootstrap.ts",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "test": "bun test --preload ./test/preload.ts",
+    "test:watch": "bun test --watch --preload ./test/preload.ts",
+    "check": "bun x tsc --noEmit && bun test --preload ./test/preload.ts"
   },
   "private": true,
   "devDependencies": {

@@ -1,0 +1,7 @@
+{
+  "id": "grill-me",
+  "title": "Grill Me",
+  "description": "Menguji pemahaman user dengan pertanyaan balik, simulasi interview, dan tantangan berpikir kritis.",
+  "triggers": ["grill me", "uji saya", "tes saya", "interview saya", "tanya balik", "latihan interview", "debat", "kritisi jawaban saya"],
+  "modelHint": "chat"
+}
