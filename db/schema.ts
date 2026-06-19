@@ -80,3 +80,15 @@ export const webUsers = sqliteTable('web_users', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).default(new Date()),
   lastLoginAt: integer('last_login_at', { mode: 'timestamp' }),
 });
+
+export const webChatLogs = sqliteTable('web_chat_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  email: text('email').notNull().references(() => webUsers.email),
+  role: text('role').notNull(), // 'user' | 'assistant'
+  content: text('content').notNull(),
+  route: text('route'),
+  skillId: text('skill_id'),
+  intent: text('intent'),
+  model: text('model'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
+});

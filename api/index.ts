@@ -22,8 +22,10 @@ import { db } from '../db';
 import { users, messages, telemetryEvents, webUsers } from '../db/schema';
 import { count, desc, eq } from 'drizzle-orm';
 import {
+  appendWebChatLog,
   consumeWebChatQuota,
   getWebQuotaStatus,
+  getManagedWebUserLogs,
   getWebUserByEmail,
   isWebProfileComplete,
   listManagedWebUsers,
@@ -807,6 +809,12 @@ function renderAdminPage(session: WebSession) {
         .dense-list {
           max-height: 560px;
         }
+        .conversation-log {
+          display: grid;
+          gap: 0.7rem;
+          max-height: 460px;
+          overflow: auto;
+        }
         .item {
           border: 1px solid rgba(255,255,255,0.08);
           border-radius: 14px;
@@ -922,6 +930,46 @@ function renderAdminPage(session: WebSession) {
           margin-top: 0.18rem;
           color: var(--muted);
           font-size: 0.72rem;
+        }
+        .pager {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.75rem;
+          margin-top: 0.9rem;
+        }
+        .pager-info {
+          color: var(--muted);
+          font-size: 0.86rem;
+        }
+        .log-bubble {
+          padding: 0.8rem 0.9rem;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background: rgba(255,255,255,0.04);
+        }
+        .log-bubble.user {
+          background: rgba(59,130,246,0.12);
+          border-color: rgba(96,165,250,0.2);
+        }
+        .log-bubble.assistant {
+          background: rgba(168,85,247,0.10);
+          border-color: rgba(192,132,252,0.18);
+        }
+        .log-meta {
+          display: flex;
+          justify-content: space-between;
+          gap: 0.75rem;
+          margin-bottom: 0.45rem;
+          color: var(--muted);
+          font-size: 0.78rem;
+        }
+        .empty-state {
+          padding: 1rem;
+          border-radius: 14px;
+          background: rgba(255,255,255,0.04);
+          color: var(--muted);
+          font-size: 0.92rem;
         }
         a { color: #a5b4fc; }
       </style>
@@ -1067,11 +1115,25 @@ function renderAdminPage(session: WebSession) {
               <option value="active">Aktif</option>
               <option value="suspended">Suspended</option>
               <option value="incomplete">Profil belum lengkap</option>
+              <option value="quota_exhausted">Kuota habis</option>
             </select>
           </div>
           <div id="webUsersList" class="list dense-list">
             <div class="hint">Belum dimuat.</div>
           </div>
+          <div class="pager">
+            <div id="webUsersPagerInfo" class="pager-info">0 user</div>
+            <div class="row">
+              <button id="webUsersPrevPage" type="button" class="secondary">Sebelumnya</button>
+              <button id="webUsersNextPage" type="button" class="secondary">Berikutnya</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Web User Detail</h2>
+          <div id="selectedWebUser" class="empty-state">Pilih salah satu user web untuk melihat statistik pemakaian dan log percakapannya.</div>
+          <div id="selectedWebUserLogs" class="conversation-log" style="margin-top:1rem; display:none;"></div>
         </div>
 
         <div class="grid">
@@ -1129,7 +1191,14 @@ function renderAdminPage(session: WebSession) {
         const webUsersList = document.getElementById('webUsersList');
         const webUserSearch = document.getElementById('webUserSearch');
         const webUserStatusFilter = document.getElementById('webUserStatusFilter');
+        const webUsersPagerInfo = document.getElementById('webUsersPagerInfo');
+        const webUsersPrevPage = document.getElementById('webUsersPrevPage');
+        const webUsersNextPage = document.getElementById('webUsersNextPage');
+        const selectedWebUser = document.getElementById('selectedWebUser');
+        const selectedWebUserLogs = document.getElementById('selectedWebUserLogs');
         let cachedWebUsers = [];
+        let webUsersPage = 1;
+        const WEB_USERS_PAGE_SIZE = 8;
 
         tokenInput.value = params.get('token') || '';
 
@@ -1261,7 +1330,7 @@ function renderAdminPage(session: WebSession) {
         function renderWebUsers() {
           const query = String(webUserSearch.value || '').trim().toLowerCase();
           const filter = String(webUserStatusFilter.value || 'all');
-          const items = cachedWebUsers.filter((item) => {
+          const filtered = cachedWebUsers.filter((item) => {
             const haystack = [
               item.fullName,
               item.googleName,
@@ -1276,8 +1345,19 @@ function renderAdminPage(session: WebSession) {
             if (filter === 'active' && item.suspended) return false;
             if (filter === 'suspended' && !item.suspended) return false;
             if (filter === 'incomplete' && item.profileCompleted) return false;
+            if (filter === 'quota_exhausted' && Number(item.quota?.remaining || 0) > 0) return false;
             return true;
           });
+
+          const totalPages = Math.max(1, Math.ceil(filtered.length / WEB_USERS_PAGE_SIZE));
+          webUsersPage = Math.min(totalPages, Math.max(1, webUsersPage));
+          const startIndex = (webUsersPage - 1) * WEB_USERS_PAGE_SIZE;
+          const items = filtered.slice(startIndex, startIndex + WEB_USERS_PAGE_SIZE);
+          webUsersPagerInfo.textContent = filtered.length
+            ? 'Menampilkan ' + (startIndex + 1) + '-' + (startIndex + items.length) + ' dari ' + filtered.length + ' user'
+            : '0 user';
+          webUsersPrevPage.disabled = webUsersPage <= 1;
+          webUsersNextPage.disabled = webUsersPage >= totalPages;
 
           webUsersList.innerHTML = items.length
             ? '<div class="user-grid">' + items.map((item) => {
@@ -1302,13 +1382,14 @@ function renderAdminPage(session: WebSession) {
                         </div>
                       </div>
                       <div class="row" style="justify-content:flex-end;">
+                        <button type="button" class="secondary" onclick="viewWebUserLogs('\${escapeHtml(item.email)}')">Lihat Log</button>
                         <button type="button" class="secondary" onclick="toggleWebUserSuspension('\${escapeHtml(item.email)}', \${item.suspended ? 'false' : 'true'})">\${item.suspended ? 'Aktifkan' : 'Suspend'}</button>
                         <button type="button" onclick="resetWebUserQuota('\${escapeHtml(item.email)}')">Reset Kuota</button>
                       </div>
                     </div>
                     <div class="mini-stat">
                       <div><strong>\${item.quota?.remaining ?? '-'}/\${item.quota?.limit ?? '-'}</strong><span>Sisa chat</span></div>
-                      <div><strong>\${item.quota?.used ?? '-'}</strong><span>Terpakai</span></div>
+                      <div><strong>\${item.totalUserMessages ?? 0}</strong><span>Total pemakaian</span></div>
                       <div><strong>\${escapeHtml(resetText)}</strong><span>Reset berikutnya</span></div>
                     </div>
                   </div>
@@ -1342,6 +1423,57 @@ function renderAdminPage(session: WebSession) {
             });
             setStatus(globalStatus, 'Kuota user berhasil direset.', 'ok');
             await loadWebUsers();
+          } catch (error) {
+            setStatus(globalStatus, error.message, 'error');
+          }
+        };
+
+        window.viewWebUserLogs = async (email) => {
+          try {
+            setStatus(globalStatus, 'Memuat detail user dan log percakapan...');
+            const data = await api('/admin/users/' + encodeURIComponent(email) + '/logs');
+            const user = data.user || {};
+            const logs = Array.isArray(data.logs) ? data.logs : [];
+            selectedWebUser.innerHTML = \`
+              <div class="item">
+                <div class="row" style="justify-content:space-between;align-items:flex-start;">
+                  <div>
+                    <strong>\${escapeHtml(user.fullName || user.googleName || user.email || '-')}</strong>
+                    <div class="hint">\${escapeHtml(user.email || '-')}</div>
+                    <div class="hint">\${escapeHtml(user.region || 'Wilayah belum diisi')}</div>
+                  </div>
+                  <div class="badge-row">
+                    <span class="badge">\${escapeHtml(user.role || 'visitor')}</span>
+                    <span class="badge \${user.suspended ? 'danger' : 'ok'}">\${user.suspended ? 'suspended' : 'aktif'}</span>
+                  </div>
+                </div>
+                <div class="mini-stat" style="margin-top:0.9rem;">
+                  <div><strong>\${escapeHtml(user.joinedAt ? new Date(user.joinedAt).toLocaleString('id-ID') : '-')}</strong><span>Bergabung sejak</span></div>
+                  <div><strong>\${user.totalUserMessages ?? 0}</strong><span>Jumlah pemakaian</span></div>
+                  <div><strong>\${user.totalAssistantMessages ?? 0}</strong><span>Jawaban Cybra</span></div>
+                </div>
+              </div>
+            \`;
+
+            selectedWebUserLogs.style.display = logs.length ? 'grid' : 'none';
+            selectedWebUserLogs.innerHTML = logs.length
+              ? logs.map((log) => \`
+                  <div class="log-bubble \${escapeHtml(log.role || 'assistant')}">
+                    <div class="log-meta">
+                      <span>\${escapeHtml(log.role === 'user' ? 'User' : 'Cybra')}</span>
+                      <span>\${escapeHtml(log.createdAt ? new Date(log.createdAt).toLocaleString('id-ID') : '-')}</span>
+                    </div>
+                    <div style="white-space:pre-wrap;overflow-wrap:anywhere;">\${escapeHtml(log.content || '')}</div>
+                    <div class="badge-row" style="margin-top:0.6rem;">
+                      \${log.route ? '<span class="badge">' + escapeHtml(log.route) + '</span>' : ''}
+                      \${log.skillId ? '<span class="badge">' + escapeHtml(log.skillId) + '</span>' : ''}
+                      \${log.intent ? '<span class="badge">' + escapeHtml(log.intent) + '</span>' : ''}
+                      \${log.model ? '<span class="badge">' + escapeHtml(log.model) + '</span>' : ''}
+                    </div>
+                  </div>
+                \`).join('')
+              : '';
+            setStatus(globalStatus, 'Detail user berhasil dimuat.', 'ok');
           } catch (error) {
             setStatus(globalStatus, error.message, 'error');
           }
@@ -1504,7 +1636,18 @@ function renderAdminPage(session: WebSession) {
         });
 
         webUserSearch.addEventListener('input', renderWebUsers);
-        webUserStatusFilter.addEventListener('change', renderWebUsers);
+        webUserStatusFilter.addEventListener('change', () => {
+          webUsersPage = 1;
+          renderWebUsers();
+        });
+        webUsersPrevPage.addEventListener('click', () => {
+          webUsersPage = Math.max(1, webUsersPage - 1);
+          renderWebUsers();
+        });
+        webUsersNextPage.addEventListener('click', () => {
+          webUsersPage += 1;
+          renderWebUsers();
+        });
       </script>
     </body>
     </html>
@@ -3354,6 +3497,23 @@ app.post('/api/chat', async (c) => {
     history,
   });
 
+  await appendWebChatLog({
+    email: session.email,
+    role: 'user',
+    content: body.message,
+    route: 'web_user_input',
+    skillId: typeof body.skillId === 'string' ? body.skillId : null,
+  });
+  await appendWebChatLog({
+    email: session.email,
+    role: 'assistant',
+    content: result.reply || '',
+    route: result.route,
+    skillId: result.skill?.id || null,
+    intent: result.intent,
+    model: result.model,
+  });
+
   return c.json({
     ...result,
     quota: quotaAttempt.quota,
@@ -3492,6 +3652,20 @@ app.get('/admin/users', async (c) => {
   }
 
   return c.json({ items: await listManagedWebUsers() });
+});
+
+app.get('/admin/users/:email/logs', async (c) => {
+  const access = await requireAdminApiAccess(c);
+  if (!access.ok) {
+    return c.json({ error: access.status === 403 ? 'Forbidden' : 'Unauthorized' }, access.status);
+  }
+
+  const result = await getManagedWebUserLogs(c.req.param('email'));
+  if (!result) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+
+  return c.json(result);
 });
 
 app.patch('/admin/users/:email', async (c) => {

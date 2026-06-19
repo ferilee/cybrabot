@@ -754,7 +754,20 @@ describe('api endpoints', () => {
 
     const listed = await app.request('/admin/users', { headers: adminHeaders });
     expect(listed.status).toBe(200);
-    expect((await listed.json() as { items: Array<{ email: string }> }).items.map((item) => item.email)).toContain('limited@example.com');
+    const listedJson = await listed.json() as { items: Array<{ email: string; totalUserMessages?: number }> };
+    expect(listedJson.items.map((item) => item.email)).toContain('limited@example.com');
+    expect(listedJson.items.find((item) => item.email === 'limited@example.com')?.totalUserMessages).toBe(5);
+
+    const logs = await app.request('/admin/users/limited%40example.com/logs', { headers: adminHeaders });
+    expect(logs.status).toBe(200);
+    const logsJson = await logs.json() as {
+      user: { totalUserMessages: number; joinedAt: string | null };
+      logs: Array<{ role: string; content: string }>;
+    };
+    expect(logsJson.user.joinedAt).not.toBeNull();
+    expect(logsJson.user.totalUserMessages).toBeGreaterThanOrEqual(5);
+    expect(logsJson.logs.some((item) => item.role === 'user')).toBe(true);
+    expect(logsJson.logs.some((item) => item.role === 'assistant')).toBe(true);
 
     const reset = await app.request('/admin/users/limited%40example.com', {
       method: 'PATCH',

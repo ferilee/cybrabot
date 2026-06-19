@@ -1,6 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
 import { db } from '../db';
-import { webUsers } from '../db/schema';
+import { webChatLogs, webUsers } from '../db/schema';
 import type { WebSession } from './web-auth';
 
 export const WEB_CHAT_QUOTA_LIMIT = 5;
@@ -202,8 +202,32 @@ export async function listManagedWebUsers() {
   const rows = await db.query.webUsers.findMany({
     orderBy: [desc(webUsers.lastLoginAt), desc(webUsers.updatedAt), desc(webUsers.createdAt)],
   });
+  const logs = await db.query.webChatLogs.findMany({
+    orderBy: [desc(webChatLogs.createdAt), desc(webChatLogs.id)],
+  });
+
+  const usageByEmail = new Map<string, { totalUserMessages: number; totalAssistantMessages: number; lastChatAt: string | null }>();
+  for (const log of logs) {
+    const key = log.email;
+    const current = usageByEmail.get(key) || {
+      totalUserMessages: 0,
+      totalAssistantMessages: 0,
+      lastChatAt: null,
+    };
+    if (log.role === 'user') current.totalUserMessages += 1;
+    if (log.role === 'assistant') current.totalAssistantMessages += 1;
+    if (!current.lastChatAt && log.createdAt) {
+      current.lastChatAt = log.createdAt.toISOString();
+    }
+    usageByEmail.set(key, current);
+  }
 
   return rows.map((row) => ({
+    ...(usageByEmail.get(row.email) || {
+      totalUserMessages: 0,
+      totalAssistantMessages: 0,
+      lastChatAt: null,
+    }),
     email: row.email,
     googleName: row.googleName,
     fullName: row.fullName,
@@ -297,4 +321,73 @@ export async function seedWebUserForTest(input: {
       lastLoginAt: now,
     },
   });
+}
+
+export async function appendWebChatLog(input: {
+  email: string;
+  role: 'user' | 'assistant';
+  content: string;
+  route?: string | null;
+  skillId?: string | null;
+  intent?: string | null;
+  model?: string | null;
+}) {
+  await db.insert(webChatLogs).values({
+    email: input.email.trim().toLowerCase(),
+    role: input.role,
+    content: input.content,
+    route: input.route || null,
+    skillId: input.skillId || null,
+    intent: input.intent || null,
+    model: input.model || null,
+    createdAt: new Date(),
+  });
+}
+
+export async function getManagedWebUserLogs(email: string, limit = 40) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await getWebUserByEmail(normalizedEmail);
+  if (!user) {
+    return null;
+  }
+
+  const logs = await db.query.webChatLogs.findMany({
+    where: eq(webChatLogs.email, normalizedEmail),
+    orderBy: [desc(webChatLogs.createdAt), desc(webChatLogs.id)],
+    limit,
+  });
+
+  const totalUserMessages = logs.filter((item) => item.role === 'user').length;
+  const totalAssistantMessages = logs.filter((item) => item.role === 'assistant').length;
+
+  return {
+    user: {
+      email: user.email,
+      googleName: user.googleName,
+      fullName: user.fullName,
+      picture: user.picture,
+      role: user.role,
+      profileCompleted: Boolean(user.profileCompleted),
+      suspended: Boolean(user.suspended),
+      region: [user.villageName, user.districtName, user.regencyName, user.provinceName].filter(Boolean).join(', '),
+      joinedAt: user.createdAt?.toISOString?.() || null,
+      lastLoginAt: user.lastLoginAt?.toISOString?.() || null,
+      quota: toWebQuotaStatus(user),
+      totalUserMessages,
+      totalAssistantMessages,
+    },
+    logs: logs
+      .slice()
+      .reverse()
+      .map((item) => ({
+        id: item.id,
+        role: item.role,
+        content: item.content,
+        route: item.route,
+        skillId: item.skillId,
+        intent: item.intent,
+        model: item.model,
+        createdAt: item.createdAt?.toISOString?.() || null,
+      })),
+  };
 }

@@ -78,6 +78,19 @@ sqlite.exec(`
     last_login_at INTEGER
   );
 
+  CREATE TABLE IF NOT EXISTS web_chat_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    route TEXT,
+    skill_id TEXT,
+    intent TEXT,
+    model TEXT,
+    created_at INTEGER DEFAULT (unixepoch()),
+    FOREIGN KEY (email) REFERENCES web_users(email)
+  );
+
   CREATE INDEX IF NOT EXISTS messages_user_id_idx ON messages(user_id);
   CREATE INDEX IF NOT EXISTS messages_timestamp_idx ON messages(timestamp);
   CREATE INDEX IF NOT EXISTS telemetry_event_name_idx ON telemetry_events(event);
@@ -86,6 +99,8 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS web_users_role_idx ON web_users(role);
   CREATE INDEX IF NOT EXISTS web_users_profile_completed_idx ON web_users(profile_completed);
   CREATE INDEX IF NOT EXISTS web_users_last_login_at_idx ON web_users(last_login_at);
+  CREATE INDEX IF NOT EXISTS web_chat_logs_email_idx ON web_chat_logs(email);
+  CREATE INDEX IF NOT EXISTS web_chat_logs_created_at_idx ON web_chat_logs(created_at);
 `);
 
 function ensureColumn(tableName: string, columnName: string, definition: string) {
@@ -118,6 +133,10 @@ ensureColumn('web_users', 'chat_count', 'chat_count INTEGER NOT NULL DEFAULT 0')
 ensureColumn('web_users', 'quota_cycle_start', 'quota_cycle_start INTEGER');
 ensureColumn('web_users', 'updated_at', 'updated_at INTEGER DEFAULT (unixepoch())');
 ensureColumn('web_users', 'last_login_at', 'last_login_at INTEGER');
+ensureColumn('web_chat_logs', 'route', 'route TEXT');
+ensureColumn('web_chat_logs', 'skill_id', 'skill_id TEXT');
+ensureColumn('web_chat_logs', 'intent', 'intent TEXT');
+ensureColumn('web_chat_logs', 'model', 'model TEXT');
 
 sqlite.close();
 
