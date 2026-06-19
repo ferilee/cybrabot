@@ -39,6 +39,7 @@ Isi variabel berikut:
 - `ADMIN_TOKEN` *(opsional)*: token untuk mengubah konfigurasi admin runtime via API.
 - `GOOGLE_CLIENT_ID`: OAuth client ID Google untuk login web app.
 - `GOOGLE_CLIENT_SECRET`: OAuth client secret Google untuk login web app.
+- `PUBLIC_BASE_URL`: URL publik aplikasi untuk callback OAuth, mis. `https://cybrabot.ferilee.gurumuda.eu.org`.
 - `SESSION_SECRET`: secret untuk menandatangani cookie session login web.
 - `GROUP_ALLOWED_USER_ID` *(opsional)*: hanya user ini yang boleh memanggil bot di grup, default `177517779`.
 - `GROUP_ALLOWED_USERNAME` *(opsional)*: username Telegram yang dipasangkan dengan `GROUP_ALLOWED_USER_ID`, default `ferilee`.

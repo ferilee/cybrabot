@@ -199,6 +199,29 @@ describe('backend utilities', () => {
     expect(parsed?.role).toBe('admin');
   });
 
+  test('google redirect uri prefers configured public base url', async () => {
+    const previous = process.env.PUBLIC_BASE_URL;
+    process.env.PUBLIC_BASE_URL = 'https://cybrabot.ferilee.gurumuda.eu.org';
+
+    const freshModule = await importFresh<typeof import('../lib/web-auth')>('lib/web-auth.ts');
+    const uri = freshModule.getGoogleRedirectUri({
+      req: {
+        url: 'http://127.0.0.1:4129/login',
+        header(name: string) {
+          return name.toLowerCase() === 'x-forwarded-host' ? 'internal.example' : undefined;
+        },
+      },
+    } as any);
+
+    expect(uri).toBe('https://cybrabot.ferilee.gurumuda.eu.org/auth/google/callback');
+
+    if (previous === undefined) {
+      delete process.env.PUBLIC_BASE_URL;
+    } else {
+      process.env.PUBLIC_BASE_URL = previous;
+    }
+  });
+
   test('knowledge CRUD and retrieval work', () => {
     const item = saveKnowledgeDocument({
       id: 'trigonometri',

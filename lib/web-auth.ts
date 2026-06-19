@@ -32,6 +32,10 @@ function getSessionSecret() {
   return process.env.SESSION_SECRET?.trim() || process.env.ADMIN_TOKEN?.trim() || 'cybra-dev-session-secret';
 }
 
+function getConfiguredPublicBaseUrl() {
+  return process.env.PUBLIC_BASE_URL?.trim() || process.env.APP_BASE_URL?.trim() || '';
+}
+
 function toBase64Url(input: string) {
   return Buffer.from(input, 'utf8').toString('base64url');
 }
@@ -62,9 +66,14 @@ async function verifySignedValue(value: string, signature: string) {
 }
 
 function getCookieOptions(c: Context) {
+  const configuredBaseUrl = getConfiguredPublicBaseUrl();
+  const protocol = configuredBaseUrl
+    ? new URL(configuredBaseUrl).protocol
+    : new URL(c.req.url).protocol;
+
   return {
     httpOnly: true,
-    secure: new URL(c.req.url).protocol === 'https:',
+    secure: protocol === 'https:',
     sameSite: 'Lax' as const,
     path: '/',
   };
@@ -193,6 +202,17 @@ export function consumeOAuthState(c: Context, state: string | null | undefined) 
 }
 
 export function getGoogleRedirectUri(c: Context) {
+  const configuredBaseUrl = getConfiguredPublicBaseUrl();
+  if (configuredBaseUrl) {
+    return new URL('/auth/google/callback', configuredBaseUrl).toString();
+  }
+
+  const forwardedProto = c.req.header('x-forwarded-proto')?.split(',')[0]?.trim();
+  const forwardedHost = c.req.header('x-forwarded-host')?.split(',')[0]?.trim();
+  if (forwardedProto && forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}/auth/google/callback`;
+  }
+
   return new URL('/auth/google/callback', c.req.url).toString();
 }
 
