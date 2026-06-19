@@ -842,6 +842,97 @@ async function getConversationHistory(userId: number): Promise<ChatHistoryItem[]
     .filter((message) => message.content.trim().length > 0);
 }
 
+async function handleExplicitSkillCommand(
+  ctx: any,
+  options: {
+    command: 'grill' | 'humanis';
+    requestedSkillId: 'grill-me' | 'penjelasan-humanis';
+    emptyPrompt: string;
+  }
+) {
+  if (!shouldHandleGroupCommand(ctx)) {
+    return;
+  }
+
+  const startedAt = Date.now();
+  const rawText = ctx.message?.text || '';
+  const text = rawText.replace(new RegExp(`^/${options.command}(@\\w+)?`, 'i'), '').trim();
+
+  if (!text) {
+    await replySafely(ctx, options.emptyPrompt);
+    return;
+  }
+
+  const userId = ctx.from.id;
+  await ensureUserRegistered(ctx.from);
+  const adminConfig = await getAdminConfig();
+  const history = await getConversationHistory(userId);
+  const intentResult = await getIntent(text, adminConfig);
+
+  await logEvent('message.received', {
+    userId,
+    chatId: ctx.chat.id,
+    messageLength: rawText.length,
+    normalizedLength: text.length,
+    chatType: ctx.chat?.type,
+    route: `command_${options.command}`,
+  });
+
+  await db.insert(messages).values({
+    userId,
+    content: rawText,
+    role: 'user',
+    intent: options.requestedSkillId,
+  });
+
+  const response = await runSkillChat({
+    message: text,
+    history,
+    adminConfig,
+    requestedSkillId: options.requestedSkillId,
+    intentHint: intentResult,
+  });
+
+  await logEvent('message.ai_used', {
+    userId,
+    route: `command_${options.command}`,
+    skillId: response.skill?.id || options.requestedSkillId,
+    intent: response.intent,
+    intentModel: response.intentModel,
+    model: response.model,
+    latencyMs: response.latencyMs,
+    knowledgeMatches: response.knowledgeMatches,
+    fallback: response.fallback,
+    reach: response.reach,
+  });
+
+  const telegramReply = formatTelegramRichText(response.reply);
+  await replySafely(ctx, telegramReply);
+
+  if (response.exportFile) {
+    await ctx.replyWithDocument(new InputFile(response.exportFile.outputPath, response.exportFile.fileName), {
+      caption:
+        `Berikut file markdown hasil penjelasan humanis.\n` +
+        `<b>Skill:</b> ${response.skill?.title || 'Penjelasan Humanis'}\n` +
+        `<b>Format:</b> MD`,
+      parse_mode: 'HTML',
+    });
+  }
+
+  await db.insert(messages).values({
+    userId,
+    content: telegramReply,
+    role: 'bot',
+    intent: response.skill?.id || options.requestedSkillId,
+  });
+
+  await logEvent('message.completed', {
+    userId,
+    route: `command_${options.command}`,
+    durationMs: Date.now() - startedAt,
+  });
+}
+
 bot.command('start', async (ctx) => {
   try {
     if (!shouldHandleGroupCommand(ctx)) {
@@ -954,6 +1045,26 @@ bot.command('dokumen_kirim', async (ctx) => {
   }
 
   await sendActiveDocumentFile(ctx);
+});
+
+bot.command('grill', async (ctx) => {
+  await handleExplicitSkillCommand(ctx, {
+    command: 'grill',
+    requestedSkillId: 'grill-me',
+    emptyPrompt:
+      'Format: <b>/grill topik atau jawaban yang mau diuji</b>\n' +
+      'Contoh: <b>/grill uji saya tentang trigonometri dasar</b>',
+  });
+});
+
+bot.command('humanis', async (ctx) => {
+  await handleExplicitSkillCommand(ctx, {
+    command: 'humanis',
+    requestedSkillId: 'penjelasan-humanis',
+    emptyPrompt:
+      'Format: <b>/humanis topik yang mau dijelaskan</b>\n' +
+      'Contoh: <b>/humanis jelaskan RAG dengan bahasa awam dan kasih analogi</b>',
+  });
 });
 
 bot.command('admin_status', async (ctx) => {
@@ -1428,18 +1539,7 @@ bot.on('message:text', async (ctx) => {
       adminConfig,
       intentHint: intentResult,
     });
-    const telegramReply = formatTelegramRichCardWithBody({
-      title: response.skill?.title || 'Jawaban CybraFeriBot',
-      subtitle: response.intent === 'technical' ? 'Mode skill teknis' : 'Mode skill chat',
-      badge: response.skill?.id || 'AI',
-      fields: [
-        { label: 'Model', value: response.model || adminConfig.models.chat },
-        { label: 'Intent', value: response.intent },
-        { label: 'Skill', value: response.skill?.title || 'Auto' },
-        { label: 'Latency', value: `${response.latencyMs} ms` },
-      ],
-      bodyHtml: formatTelegramRichText(response.reply),
-    });
+    const telegramReply = formatTelegramRichText(response.reply);
 
     await logEvent('message.ai_used', {
       userId,
