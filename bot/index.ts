@@ -18,7 +18,7 @@ import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreference
 import { getRuntimeResponse } from '../lib/runtime-responses';
 import { runSkillChat } from '../lib/skill-chat';
 import { runLocalTool } from '../lib/tools';
-import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, getTelegramDraftStatusHtml, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
+import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, getTelegramDraftStatusHtml, renderTelegramHtmlFallback, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -293,15 +293,16 @@ async function replySafely(ctx: any, text: string) {
       }
     }
 
-    const plainText = limitTelegramMessage(simplifiedText.replace(/<[^>]+>/g, ''));
+    const htmlFallback = limitTelegramMessage(renderTelegramHtmlFallback(simplifiedText));
     try {
-      await ctx.reply(plainText, { parse_mode: 'HTML' });
+      await ctx.reply(htmlFallback, { parse_mode: 'HTML' });
     } catch (plainError: any) {
       await logEvent('telegram.plain_reply_html_failed', {
         chatId: ctx?.chat?.id ?? null,
         messageId: ctx?.message?.message_id ?? null,
         error: stringifyTelegramError(plainError),
       }, 'warn');
+      const plainText = limitTelegramMessage(htmlFallback.replace(/<[^>]+>/g, ''));
       await ctx.reply(plainText);
     }
   }

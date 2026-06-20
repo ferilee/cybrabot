@@ -16,7 +16,7 @@ import {
   saveUserPreferences,
 } from '../lib/preferences';
 import { runLocalTool } from '../lib/tools';
-import { containsTelegramHtml, escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, getTelegramDraftStatusHtml, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
+import { containsTelegramHtml, escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, getTelegramDraftStatusHtml, renderTelegramHtmlFallback, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
 import { renderResponseTemplate } from '../lib/runtime-responses';
 import { getWebSkill, loadWebSkills, selectWebSkill } from '../lib/web-skills';
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
@@ -173,6 +173,13 @@ describe('backend utilities', () => {
     expect(simplified).toContain('<tg-math>x^2</tg-math>');
     expect(simplified).toContain('A | B');
     expect(simplified).not.toContain('<table');
+
+    const htmlFallback = renderTelegramHtmlFallback('<h1>Judul</h1><p>Nilai <tg-math>x^2</tg-math></p><table bordered striped><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table><tg-math-block>\\sin^2 A + \\cos^2 A = 1</tg-math-block>');
+    expect(htmlFallback).toContain('<b>Judul</b>');
+    expect(htmlFallback).toContain('<code>x^2</code>');
+    expect(htmlFallback).toContain('<pre>A | B');
+    expect(htmlFallback).toContain('1 | 2');
+    expect(htmlFallback).toContain('<pre>\\sin^2 A + \\cos^2 A = 1</pre>');
   });
 
   test('admin config loads defaults, saves merge, and validates token', async () => {

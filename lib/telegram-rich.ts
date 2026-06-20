@@ -468,6 +468,84 @@ export function simplifyTelegramRichContent(input: string) {
   return simplified;
 }
 
+function decodeBasicHtmlEntities(input: string) {
+  return input
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function stripTelegramHtmlTags(input: string) {
+  return decodeBasicHtmlEntities(input.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ''))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function renderTableHtmlFallback(tableInnerHtml: string) {
+  const rows = [...tableInnerHtml.matchAll(/<tr>([\s\S]*?)<\/tr>/gi)].map((match) => {
+    const rowHtml = match[1] || '';
+    const cells = [...rowHtml.matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((cellMatch) =>
+      stripTelegramHtmlTags(cellMatch[1] || '')
+    );
+    return cells;
+  }).filter((row) => row.length);
+
+  if (!rows.length) {
+    return '';
+  }
+
+  const columnCount = Math.max(...rows.map((row) => row.length));
+  const widths = Array.from({ length: columnCount }, (_, index) =>
+    Math.max(...rows.map((row) => (row[index] || '').length), 1)
+  );
+
+  const renderRow = (row: string[]) =>
+    row
+      .map((cell, index) => (cell || '').padEnd(widths[index] || 1, ' '))
+      .join(' | ')
+      .trimEnd();
+
+  const header = renderRow(rows[0] || []);
+  const divider = widths.map((width) => '-'.repeat(Math.max(width, 3))).join('-|-');
+  const body = rows.slice(1).map(renderRow);
+  const lines = [header, divider, ...body].filter(Boolean);
+
+  return `<pre>${escapeHtml(lines.join('\n'))}</pre>`;
+}
+
+export function renderTelegramHtmlFallback(input: string) {
+  const normalized = input.replace(/\r\n/g, '\n').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  let html = normalized
+    .replace(/<table\b[^>]*>([\s\S]*?)<\/table>/gi, (_, inner) => renderTableHtmlFallback(inner))
+    .replace(/<tg-math-block>([\s\S]*?)<\/tg-math-block>/gi, (_, expr) => `<pre>${escapeHtml(decodeBasicHtmlEntities(String(expr).trim()))}</pre>`)
+    .replace(/<tg-math>([\s\S]*?)<\/tg-math>/gi, (_, expr) => `<code>${escapeHtml(decodeBasicHtmlEntities(String(expr).trim()))}</code>`)
+    .replace(/<h[1-6]>([\s\S]*?)<\/h[1-6]>/gi, '<b>$1</b>\n')
+    .replace(/<p>([\s\S]*?)<\/p>/gi, '$1\n')
+    .replace(/<(?:ul|ol)\b[^>]*>\s*/gi, '')
+    .replace(/\s*<\/(?:ul|ol)>/gi, '\n')
+    .replace(/<li>([\s\S]*?)<\/li>/gi, '• $1\n')
+    .replace(/<footer>([\s\S]*?)<\/footer>/gi, '\n<i>$1</i>')
+    .replace(/<mark>([\s\S]*?)<\/mark>/gi, '<b>$1</b>')
+    .replace(/<(?:sub|sup)>([\s\S]*?)<\/(?:sub|sup)>/gi, '$1')
+    .replace(/<hr\s*\/?>/gi, '\n<code>──────────</code>\n')
+    .replace(/<details\b[^>]*>/gi, '')
+    .replace(/<\/details>/gi, '')
+    .replace(/<summary>([\s\S]*?)<\/summary>/gi, '<b>$1</b>\n');
+
+  html = html
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return html;
+}
+
 export function getTelegramDraftStatusHtml(mode: TelegramDraftMode) {
   switch (mode) {
     case 'document':
