@@ -6,6 +6,7 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 COPY api ./api
+COPY assets ./assets
 COPY bot ./bot
 COPY db ./db
 COPY knowledge ./knowledge
