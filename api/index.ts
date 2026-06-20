@@ -846,18 +846,44 @@ function renderAdminPage(session: WebSession) {
         }
         .user-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-          gap: 0.9rem;
+          grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+          gap: 1rem;
         }
         .user-card {
           display: grid;
-          gap: 0.8rem;
+          gap: 0.95rem;
+          padding: 1rem;
         }
         .user-header {
           display: grid;
-          grid-template-columns: auto minmax(0, 1fr) auto;
-          gap: 0.8rem;
+          grid-template-columns: auto minmax(0, 1fr);
+          gap: 0.9rem;
           align-items: start;
+        }
+        .user-identity {
+          min-width: 0;
+        }
+        .user-name {
+          display: block;
+          font-size: 1rem;
+          line-height: 1.25;
+          overflow-wrap: anywhere;
+        }
+        .user-email {
+          margin-top: 0.28rem;
+          color: rgba(226,232,240,0.82);
+          font-size: 0.92rem;
+          overflow-wrap: anywhere;
+        }
+        .user-region {
+          padding: 0.75rem 0.85rem;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.06);
+          background: rgba(255,255,255,0.04);
+          color: rgba(226,232,240,0.76);
+          font-size: 0.9rem;
+          line-height: 1.5;
+          overflow-wrap: anywhere;
         }
         .user-avatar {
           width: 44px;
@@ -883,7 +909,7 @@ function renderAdminPage(session: WebSession) {
           display: flex;
           flex-wrap: wrap;
           gap: 0.45rem;
-          margin-top: 0.45rem;
+          margin-top: 0.55rem;
         }
         .badge {
           display: inline-flex;
@@ -911,6 +937,17 @@ function renderAdminPage(session: WebSession) {
           color: #fecaca;
           border-color: rgba(239,68,68,0.22);
           background: rgba(127,29,29,0.35);
+        }
+        .user-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.65rem;
+          justify-content: flex-end;
+          margin-top: 0.1rem;
+        }
+        .user-actions button {
+          flex: 0 0 auto;
+          min-width: 116px;
         }
         .mini-stat {
           display: grid;
@@ -944,6 +981,11 @@ function renderAdminPage(session: WebSession) {
           color: var(--muted);
           font-size: 0.86rem;
         }
+        @media (max-width: 860px) {
+          .user-grid {
+            grid-template-columns: 1fr;
+          }
+        }
         .log-bubble {
           padding: 0.8rem 0.9rem;
           border-radius: 14px;
@@ -972,6 +1014,21 @@ function renderAdminPage(session: WebSession) {
           background: rgba(255,255,255,0.04);
           color: var(--muted);
           font-size: 0.92rem;
+        }
+        @media (max-width: 720px) {
+          .user-card {
+            padding: 0.95rem;
+          }
+          .user-actions {
+            justify-content: stretch;
+          }
+          .user-actions button {
+            flex: 1 1 100%;
+            min-width: 0;
+          }
+          .mini-stat {
+            grid-template-columns: 1fr;
+          }
         }
         a { color: #a5b4fc; }
       </style>
@@ -1373,26 +1430,26 @@ function renderAdminPage(session: WebSession) {
                   <div class="item user-card">
                     <div class="user-header">
                       \${avatar}
-                      <div style="min-width:0;">
-                        <strong style="display:block;overflow-wrap:anywhere;">\${escapeHtml(displayName)}</strong>
-                        <div class="hint" style="overflow-wrap:anywhere;">\${escapeHtml(item.email)}</div>
-                        <div class="hint" style="margin-top:0.25rem;">\${escapeHtml(item.region || 'Wilayah belum diisi')}</div>
+                      <div class="user-identity">
+                        <strong class="user-name">\${escapeHtml(displayName)}</strong>
+                        <div class="user-email">\${escapeHtml(item.email)}</div>
                         <div class="badge-row">
                           <span class="badge">\${escapeHtml(item.role || 'visitor')}</span>
                           <span class="badge \${item.profileCompleted ? 'ok' : 'warn'}">\${item.profileCompleted ? 'profil lengkap' : 'profil belum lengkap'}</span>
                           <span class="badge \${item.suspended ? 'danger' : 'ok'}">\${item.suspended ? 'suspended' : 'aktif'}</span>
                         </div>
                       </div>
-                      <div class="row" style="justify-content:flex-end;">
-                        <button type="button" class="secondary" onclick="viewWebUserLogs('\${escapeHtml(item.email)}')">Lihat Log</button>
-                        <button type="button" class="secondary" onclick="toggleWebUserSuspension('\${escapeHtml(item.email)}', \${item.suspended ? 'false' : 'true'})">\${item.suspended ? 'Aktifkan' : 'Suspend'}</button>
-                        <button type="button" onclick="resetWebUserQuota('\${escapeHtml(item.email)}')">Reset Kuota</button>
-                      </div>
                     </div>
+                    <div class="user-region">\${escapeHtml(item.region || 'Wilayah belum diisi')}</div>
                     <div class="mini-stat">
                       <div><strong>\${item.quota?.remaining ?? '-'}/\${item.quota?.limit ?? '-'}</strong><span>Sisa chat</span></div>
                       <div><strong>\${item.totalUserMessages ?? 0}</strong><span>Total pemakaian</span></div>
                       <div><strong>\${escapeHtml(resetText)}</strong><span>Reset berikutnya</span></div>
+                    </div>
+                    <div class="user-actions">
+                      <button type="button" class="secondary" onclick="viewWebUserLogs('\${escapeHtml(item.email)}')">Lihat Log</button>
+                      <button type="button" class="secondary" onclick="toggleWebUserSuspension('\${escapeHtml(item.email)}', \${item.suspended ? 'false' : 'true'})">\${item.suspended ? 'Aktifkan' : 'Suspend'}</button>
+                      <button type="button" onclick="resetWebUserQuota('\${escapeHtml(item.email)}')">Reset Kuota</button>
                     </div>
                   </div>
                 \`;
@@ -1777,6 +1834,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           background: rgba(12, 39, 63, 0.48);
           scrollbar-width: thin;
           scrollbar-color: rgba(255,255,255,0.25) transparent;
+          overscroll-behavior: contain;
         }
         .brand {
           display: flex;
@@ -2635,6 +2693,12 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             z-index: 20;
             inset: 10px auto 10px 10px;
             width: min(290px, calc(100vw - 40px));
+            max-height: calc(100dvh - 20px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-bottom: max(26px, env(safe-area-inset-bottom));
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
             transform: translateX(calc(-100% - 24px));
             transition: transform 220ms ease;
           }
@@ -2798,10 +2862,16 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           <div class="intro-cta">
             <div class="intro-cta-copy">
               <strong>Kontak Pengembang</strong>
-              <span>Instagram</span>
-              <a class="intro-text-link" href="https://instagram.com/therealferilee" target="_blank" rel="noreferrer">therealferilee</a>
+              <span>@therealferilee</span>
             </div>
             <div class="intro-links">
+              <a class="intro-icon-link" href="https://instagram.com/therealferilee" target="_blank" rel="noreferrer" aria-label="Instagram Ferilee" title="@therealferilee">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect x="3.5" y="3.5" width="17" height="17" rx="5" stroke="currentColor" stroke-width="1.8"/>
+                  <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/>
+                  <circle cx="17.5" cy="6.5" r="1.1" fill="currentColor"/>
+                </svg>
+              </a>
               <a class="intro-icon-link" href="https://t.me/ferilee" target="_blank" rel="noreferrer" aria-label="Telegram Ferilee" title="@ferilee">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M21.2 4.36 3.9 11.02c-1.18.47-1.17 1.13-.22 1.42l4.44 1.39 1.71 5.35c.23.63.12.88.77.88.5 0 .72-.23 1-.5l2.42-2.35 5.02 3.71c.92.51 1.58.25 1.81-.85l2.95-13.89c.34-1.34-.51-1.95-1.6-1.46ZM9 13.5l10.11-6.38c.5-.31.96-.14.59.19l-8.66 7.81-.34 3.64L9 13.5Z" fill="currentColor"/>

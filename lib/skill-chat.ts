@@ -2,7 +2,8 @@ import type { AdminConfig } from './admin-config';
 import { runAgentReach } from './agent-reach';
 import { generateSkillResponse, getIntent, type ChatHistoryItem, type IntentResult } from './ai';
 import { detectHumanisMarkdownRequest, materializeHumanisMarkdown, type HumanisExportFile } from './humanis-export';
-import { selectWebSkill } from './web-skills';
+import { getKnowledgeContext } from './knowledge';
+import { getWebSkill, selectWebSkill } from './web-skills';
 
 export type SkillChatResult = {
   reply: string;
@@ -68,6 +69,25 @@ export async function runSkillChat(input: {
       reachMetadata = {
         error: String(error),
       };
+    }
+  }
+
+  if (skill.id === 'grill-me') {
+    const ragSkill = getWebSkill('rag-research');
+    const knowledge = getKnowledgeContext(input.message);
+
+    if (knowledge.context) {
+      externalContext +=
+        `${externalContext ? `\n\n` : ''}` +
+        `Gunakan knowledge base lokal berikut sebagai bahan bacaan awal sebelum mulai menguji user.\n` +
+        `Prioritaskan konteks ini untuk menyusun briefing belajar.\n` +
+        `${ragSkill ? `Panduan RAG:\n${ragSkill.instructions}\n\n` : ''}` +
+        `${knowledge.context}`;
+    } else {
+      externalContext +=
+        `${externalContext ? `\n\n` : ''}` +
+        `Belum ada knowledge base lokal yang relevan untuk topik ini.\n` +
+        `Saat menyusun bahan bacaan awal, katakan secara jujur bahwa briefing dibuat dari pengetahuan umum model, bukan dari knowledge lokal khusus.`;
     }
   }
 

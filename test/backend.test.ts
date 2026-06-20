@@ -468,6 +468,51 @@ describe('skill and web chat routing', () => {
     });
   });
 
+  test('runSkillChat passes study-first instructions for grill-me skill', async () => {
+    const aiUrl = join(process.cwd(), 'lib/ai.ts');
+    let capturedSkillInstructions = '';
+    let capturedExternalContext = '';
+
+    saveKnowledgeDocument({
+      id: 'trigonometri',
+      title: 'Trigonometri Dasar',
+      content: 'Trigonometri mempelajari sin, cos, tan, identitas dasar, dan hubungan sudut pada segitiga maupun lingkaran.',
+    });
+
+    mock.module(aiUrl, () => ({
+      getIntent: async () => ({ intent: 'casual', model: 'intent-mock', latencyMs: 1, fallback: false }),
+      generateSkillResponse: async (input: { skillInstructions: string; externalContext?: string }) => {
+        capturedSkillInstructions = input.skillInstructions;
+        capturedExternalContext = input.externalContext || '';
+        return {
+          text: 'briefing dulu, baru tanya siap',
+          model: 'chat-mock',
+          latencyMs: 8,
+          knowledgeMatches: [],
+          historyCount: 0,
+          fallback: false,
+        };
+      },
+    }));
+
+    const { runSkillChat } = await importFresh<typeof import('../lib/skill-chat')>('lib/skill-chat.ts');
+    const result = await runSkillChat({
+      message: 'uji saya tentang trigonometri',
+      adminConfig: await getAdminConfig(),
+      requestedSkillId: 'grill-me',
+    });
+
+    expect(result.skill?.id).toBe('grill-me');
+    expect(capturedSkillInstructions).toContain('sebelum mulai memberi pertanyaan, sajikan dulu bahan bacaan ringkas');
+    expect(capturedSkillInstructions).toContain('tawarkan pilihan jumlah soal, misalnya 3, 5, atau 10');
+    expect(capturedSkillInstructions).toContain('tawarkan timer opsional bagi user yang ingin mode lebih sulit');
+    expect(capturedSkillInstructions).toContain('setelah konfigurasi tantangan jelas atau user memilih mode standar, tanya dulu apakah user sudah siap');
+    expect(capturedSkillInstructions).toContain('Jika user menjawab dengan sinyal seperti "siap", "mulai", "gas", "lanjut"');
+    expect(capturedExternalContext).toContain('Gunakan knowledge base lokal berikut sebagai bahan bacaan awal sebelum mulai menguji user.');
+    expect(capturedExternalContext).toContain('Panduan RAG:');
+    expect(capturedExternalContext).toContain('Trigonometri Dasar');
+  });
+
   test('handleWebChat validates empty input and uses local tool route', async () => {
     const empty = await handleWebChat({ message: '   ' });
     expect(empty.route).toBe('validation');
