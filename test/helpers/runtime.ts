@@ -14,6 +14,8 @@ export function resetDatabase() {
   const sqlite = new Database(testDbPath, { create: true });
   sqlite.exec('PRAGMA busy_timeout = 5000;');
   sqlite.exec(`
+    DELETE FROM web_grill_session_history;
+    DELETE FROM web_grill_sessions;
     DELETE FROM web_chat_logs;
     DELETE FROM web_users;
     DELETE FROM document_sessions;

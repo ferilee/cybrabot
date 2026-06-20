@@ -92,3 +92,39 @@ export const webChatLogs = sqliteTable('web_chat_logs', {
   model: text('model'),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
 });
+
+export const webGrillSessions = sqliteTable('web_grill_sessions', {
+  sessionKey: text('session_key').primaryKey(),
+  topic: text('topic').notNull(),
+  material: text('material').notNull(),
+  totalQuestions: integer('total_questions').notNull().default(3),
+  timerSeconds: integer('timer_seconds'),
+  currentQuestion: integer('current_question').notNull().default(0),
+  currentQuestionText: text('current_question_text'),
+  phase: text('phase').notNull().default('awaiting_ready'),
+  hardMode: integer('hard_mode', { mode: 'boolean' }).notNull().default(false),
+  answeredCount: integer('answered_count').notNull().default(0),
+  correctCount: integer('correct_count').notNull().default(0),
+  partialCount: integer('partial_count').notNull().default(0),
+  questionReviews: text('question_reviews'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(new Date()),
+});
+
+export const webGrillSessionHistory = sqliteTable('web_grill_session_history', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sessionKey: text('session_key').notNull(),
+  email: text('email').references(() => webUsers.email),
+  topic: text('topic').notNull(),
+  totalQuestions: integer('total_questions').notNull(),
+  answeredCount: integer('answered_count').notNull().default(0),
+  correctCount: integer('correct_count').notNull().default(0),
+  partialCount: integer('partial_count').notNull().default(0),
+  timerSeconds: integer('timer_seconds'),
+  hardMode: integer('hard_mode', { mode: 'boolean' }).notNull().default(false),
+  endedReason: text('ended_reason').notNull().default('completed'),
+  finalReview: text('final_review'),
+  questionReviews: text('question_reviews'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
+  completedAt: integer('completed_at', { mode: 'timestamp' }).default(new Date()),
+});

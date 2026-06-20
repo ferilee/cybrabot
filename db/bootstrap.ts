@@ -91,6 +91,43 @@ sqlite.exec(`
     FOREIGN KEY (email) REFERENCES web_users(email)
   );
 
+  CREATE TABLE IF NOT EXISTS web_grill_sessions (
+    session_key TEXT PRIMARY KEY NOT NULL,
+    topic TEXT NOT NULL,
+    material TEXT NOT NULL,
+    total_questions INTEGER NOT NULL DEFAULT 3,
+    timer_seconds INTEGER,
+    current_question INTEGER NOT NULL DEFAULT 0,
+    current_question_text TEXT,
+    phase TEXT NOT NULL DEFAULT 'awaiting_ready',
+    hard_mode INTEGER NOT NULL DEFAULT 0,
+    answered_count INTEGER NOT NULL DEFAULT 0,
+    correct_count INTEGER NOT NULL DEFAULT 0,
+    partial_count INTEGER NOT NULL DEFAULT 0,
+    question_reviews TEXT,
+    created_at INTEGER DEFAULT (unixepoch()),
+    updated_at INTEGER DEFAULT (unixepoch())
+  );
+
+  CREATE TABLE IF NOT EXISTS web_grill_session_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    session_key TEXT NOT NULL,
+    email TEXT,
+    topic TEXT NOT NULL,
+    total_questions INTEGER NOT NULL,
+    answered_count INTEGER NOT NULL DEFAULT 0,
+    correct_count INTEGER NOT NULL DEFAULT 0,
+    partial_count INTEGER NOT NULL DEFAULT 0,
+    timer_seconds INTEGER,
+    hard_mode INTEGER NOT NULL DEFAULT 0,
+    ended_reason TEXT NOT NULL DEFAULT 'completed',
+    final_review TEXT,
+    question_reviews TEXT,
+    created_at INTEGER DEFAULT (unixepoch()),
+    completed_at INTEGER DEFAULT (unixepoch()),
+    FOREIGN KEY (email) REFERENCES web_users(email)
+  );
+
   CREATE INDEX IF NOT EXISTS messages_user_id_idx ON messages(user_id);
   CREATE INDEX IF NOT EXISTS messages_timestamp_idx ON messages(timestamp);
   CREATE INDEX IF NOT EXISTS telemetry_event_name_idx ON telemetry_events(event);
@@ -101,6 +138,9 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS web_users_last_login_at_idx ON web_users(last_login_at);
   CREATE INDEX IF NOT EXISTS web_chat_logs_email_idx ON web_chat_logs(email);
   CREATE INDEX IF NOT EXISTS web_chat_logs_created_at_idx ON web_chat_logs(created_at);
+  CREATE INDEX IF NOT EXISTS web_grill_sessions_updated_at_idx ON web_grill_sessions(updated_at);
+  CREATE INDEX IF NOT EXISTS web_grill_history_email_idx ON web_grill_session_history(email);
+  CREATE INDEX IF NOT EXISTS web_grill_history_completed_at_idx ON web_grill_session_history(completed_at);
 `);
 
 function ensureColumn(tableName: string, columnName: string, definition: string) {
@@ -137,6 +177,26 @@ ensureColumn('web_chat_logs', 'route', 'route TEXT');
 ensureColumn('web_chat_logs', 'skill_id', 'skill_id TEXT');
 ensureColumn('web_chat_logs', 'intent', 'intent TEXT');
 ensureColumn('web_chat_logs', 'model', 'model TEXT');
+ensureColumn('web_grill_sessions', 'current_question_text', 'current_question_text TEXT');
+ensureColumn('web_grill_sessions', 'phase', "phase TEXT NOT NULL DEFAULT 'awaiting_ready'");
+ensureColumn('web_grill_sessions', 'hard_mode', 'hard_mode INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_sessions', 'answered_count', 'answered_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_sessions', 'correct_count', 'correct_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_sessions', 'partial_count', 'partial_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_sessions', 'question_reviews', 'question_reviews TEXT');
+ensureColumn('web_grill_sessions', 'created_at', 'created_at INTEGER DEFAULT (unixepoch())');
+ensureColumn('web_grill_sessions', 'updated_at', 'updated_at INTEGER DEFAULT (unixepoch())');
+ensureColumn('web_grill_session_history', 'email', 'email TEXT');
+ensureColumn('web_grill_session_history', 'answered_count', 'answered_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_session_history', 'correct_count', 'correct_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_session_history', 'partial_count', 'partial_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_session_history', 'timer_seconds', 'timer_seconds INTEGER');
+ensureColumn('web_grill_session_history', 'hard_mode', 'hard_mode INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_session_history', 'ended_reason', "ended_reason TEXT NOT NULL DEFAULT 'completed'");
+ensureColumn('web_grill_session_history', 'final_review', 'final_review TEXT');
+ensureColumn('web_grill_session_history', 'question_reviews', 'question_reviews TEXT');
+ensureColumn('web_grill_session_history', 'created_at', 'created_at INTEGER DEFAULT (unixepoch())');
+ensureColumn('web_grill_session_history', 'completed_at', 'completed_at INTEGER DEFAULT (unixepoch())');
 
 sqlite.close();
 

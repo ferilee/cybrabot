@@ -49,6 +49,7 @@ import { getWebChatSkills, handleWebChat } from '../lib/web-chat';
 import { detectVisionMode } from '../lib/vision-router';
 import { logEvent } from '../lib/observability';
 import { saveWebUserProfile, seedWebUserForTest } from '../lib/web-users';
+import { listPersistedGrillHistoryByEmail } from '../lib/grill-session-store';
 import { importFresh, resetDatabase, resetKnowledgeDirectory, testArtifactsDir } from './helpers/runtime';
 
 const adminHeaders = { 'x-admin-token': 'test-admin-token', 'content-type': 'application/json' };
@@ -508,9 +509,261 @@ describe('skill and web chat routing', () => {
     expect(capturedSkillInstructions).toContain('tawarkan timer opsional bagi user yang ingin mode lebih sulit');
     expect(capturedSkillInstructions).toContain('setelah konfigurasi tantangan jelas atau user memilih mode standar, tanya dulu apakah user sudah siap');
     expect(capturedSkillInstructions).toContain('Jika user menjawab dengan sinyal seperti "siap", "mulai", "gas", "lanjut"');
+    expect(capturedSkillInstructions).toContain('Saat memberi evaluasi jawaban, JANGAN tampilkan pertanyaan berikutnya');
+    expect(capturedSkillInstructions).toContain('Jika timer dipakai pada suatu soal, tampilkan penanda waktu dalam format persis `[MM:SS]`');
     expect(capturedExternalContext).toContain('Gunakan knowledge base lokal berikut sebagai bahan bacaan awal sebelum mulai menguji user.');
     expect(capturedExternalContext).toContain('Panduan RAG:');
     expect(capturedExternalContext).toContain('Trigonometri Dasar');
+  });
+
+  test('grill-me session engine enforces briefing, evaluation pause, and explicit continue flow', async () => {
+    const aiUrl = join(process.cwd(), 'lib/ai.ts');
+
+    mock.module(aiUrl, () => ({
+      getIntent: async () => ({ intent: 'casual', model: 'intent-mock', latencyMs: 1, fallback: false }),
+      generateSkillResponse: async (input: { message: string }) => {
+        if (input.message.startsWith('Susun bahan bacaan ringkas')) {
+          return {
+            text: '- Sin, cos, tan\n- Identitas dasar\n- Sudut istimewa',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        if (input.message.startsWith('Buat soal 1 dari 2')) {
+          return {
+            text: '## Soal 1 dari 2 [01:00]\nTentukan nilai $\\sin 30^\\circ$.',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        if (input.message.startsWith('Evaluasi jawaban user untuk soal 1')) {
+          return {
+            text: '## Evaluasi Jawaban\nJawabanmu sudah mengarah benar.\nJika sudah siap, tekan tombol "Lanjut ke Soal Berikutnya" atau ketik lanjut.\nSkor Soal: BENAR',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        if (input.message.startsWith('Buat soal 2 dari 2')) {
+          return {
+            text: '## Soal 2 dari 2 [01:00]\nBuktikan $$\\sin^2 A + \\cos^2 A = 1$$.',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        return {
+          text: 'fallback mock',
+          model: 'chat-mock',
+          latencyMs: 6,
+          knowledgeMatches: [],
+          historyCount: 0,
+          fallback: false,
+        };
+      },
+    }));
+
+    const { runSkillChat } = await importFresh<typeof import('../lib/skill-chat')>('lib/skill-chat.ts');
+    const adminConfig = await getAdminConfig();
+    const sessionKey = 'grill-session-test@example.com';
+
+    const start = await runSkillChat({
+      message: 'uji saya tentang trigonometri 2 soal 1 menit per soal',
+      adminConfig,
+      requestedSkillId: 'grill-me',
+      sessionKey,
+    });
+    expect(start.skill?.id).toBe('grill-me');
+    expect(start.reply).toContain('## Bahan Bacaan Ringkas');
+    expect(start.reply).toContain('Konfigurasi: 2 soal | ⏱ 1 menit per soal | Materi: Trigonometri');
+
+    const firstQuestion = await runSkillChat({
+      message: 'siap',
+      adminConfig,
+      sessionKey,
+    });
+    expect(firstQuestion.skill?.id).toBe('grill-me');
+    expect(firstQuestion.reply).toContain('## Soal 1 dari 2 [01:00]');
+
+    const evaluation = await runSkillChat({
+      message: 'sin 30 = 1/2',
+      adminConfig,
+      sessionKey,
+    });
+    expect(evaluation.reply).toContain('## Evaluasi Jawaban');
+    expect(evaluation.reply).toContain('Lanjut ke Soal Berikutnya');
+    expect(evaluation.reply).not.toContain('## Soal 2 dari 2');
+    expect(evaluation.reply).toContain('## Progres Sesi');
+    expect(evaluation.reply).toContain('Skor sementara: 1/1');
+    expect(evaluation.reply).not.toContain('Skor Soal: BENAR');
+
+    const secondQuestion = await runSkillChat({
+      message: 'lanjut',
+      adminConfig,
+      sessionKey,
+    });
+    expect(secondQuestion.skill?.id).toBe('grill-me');
+    expect(secondQuestion.reply).toContain('## Soal 2 dari 2 [01:00]');
+
+    const persisted = await import('../lib/grill-session-store');
+    const activeSession = await persisted.getPersistedGrillSession(sessionKey);
+    expect(activeSession?.currentQuestion).toBe(2);
+    expect(activeSession?.correctCount).toBe(1);
+  });
+
+  test('grill-me session can be ended explicitly and clears persisted state', async () => {
+    const aiUrl = join(process.cwd(), 'lib/ai.ts');
+
+    mock.module(aiUrl, () => ({
+      getIntent: async () => ({ intent: 'casual', model: 'intent-mock', latencyMs: 1, fallback: false }),
+      generateSkillResponse: async (input: { message: string }) => {
+        if (input.message.startsWith('Susun bahan bacaan ringkas')) {
+          return {
+            text: '- Konsep inti aljabar',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        return {
+          text: 'fallback mock',
+          model: 'chat-mock',
+          latencyMs: 6,
+          knowledgeMatches: [],
+          historyCount: 0,
+          fallback: false,
+        };
+      },
+    }));
+
+    const { runSkillChat } = await importFresh<typeof import('../lib/skill-chat')>('lib/skill-chat.ts');
+    const { getPersistedGrillSession } = await importFresh<typeof import('../lib/grill-session-store')>('lib/grill-session-store.ts');
+    const adminConfig = await getAdminConfig();
+    const sessionKey = 'grill-session-end@example.com';
+
+    await runSkillChat({
+      message: 'uji saya tentang aljabar 3 soal',
+      adminConfig,
+      requestedSkillId: 'grill-me',
+      sessionKey,
+    });
+
+    expect(await getPersistedGrillSession(sessionKey)).not.toBeNull();
+
+    const ended = await runSkillChat({
+      message: 'akhiri sesi',
+      adminConfig,
+      sessionKey,
+    });
+
+    expect(ended.reply).toContain('Sesi latihan diakhiri.');
+    expect(ended.reply).toContain('## Ringkasan Akhir');
+    expect(await getPersistedGrillSession(sessionKey)).toBeUndefined();
+    const history = await listPersistedGrillHistoryByEmail(sessionKey);
+    expect(history).toHaveLength(1);
+    expect(history[0]?.endedReason).toBe('ended_by_user');
+    expect(history[0]?.finalReview).toContain('Sesi latihan diakhiri.');
+    expect(history[0]?.questionReviews).toBe('[]');
+  });
+
+  test('completed grill-me session is archived for the user', async () => {
+    const aiUrl = join(process.cwd(), 'lib/ai.ts');
+
+    mock.module(aiUrl, () => ({
+      getIntent: async () => ({ intent: 'casual', model: 'intent-mock', latencyMs: 1, fallback: false }),
+      generateSkillResponse: async (input: { message: string }) => {
+        if (input.message.startsWith('Susun bahan bacaan ringkas')) {
+          return {
+            text: '- Definisi peluang',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        if (input.message.startsWith('Buat soal 1 dari 1')) {
+          return {
+            text: '## Soal 1 dari 1 [00:30]\nBerapa peluang muncul angka genap pada satu lemparan dadu?',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        if (input.message.startsWith('Evaluasi jawaban user untuk soal 1')) {
+          return {
+            text: '## Evaluasi Jawaban\nJawabanmu tepat.\nSesi selesai.\nSkor Soal: BENAR',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        return {
+          text: 'fallback mock',
+          model: 'chat-mock',
+          latencyMs: 6,
+          knowledgeMatches: [],
+          historyCount: 0,
+          fallback: false,
+        };
+      },
+    }));
+
+    const { runSkillChat } = await importFresh<typeof import('../lib/skill-chat')>('lib/skill-chat.ts');
+    const sessionKey = 'grill-session-complete@example.com';
+    const adminConfig = await getAdminConfig();
+
+    await runSkillChat({
+      message: 'uji saya tentang peluang 1 soal 30 detik',
+      adminConfig,
+      requestedSkillId: 'grill-me',
+      sessionKey,
+    });
+    await runSkillChat({
+      message: 'siap',
+      adminConfig,
+      sessionKey,
+    });
+    const done = await runSkillChat({
+      message: '1/2',
+      adminConfig,
+      sessionKey,
+    });
+
+    expect(done.reply).toContain('Sesi latihan sudah selesai.');
+    const history = await listPersistedGrillHistoryByEmail(sessionKey);
+    expect(history).toHaveLength(1);
+    expect(history[0]?.topic).toBe('Peluang');
+    expect(history[0]?.endedReason).toBe('completed');
+    expect(history[0]?.correctCount).toBe(1);
+    expect(history[0]?.finalReview).toContain('## Evaluasi Jawaban');
+    expect(history[0]?.finalReview).toContain('## Ringkasan Akhir');
+    expect(history[0]?.questionReviews).toContain('questionNumber');
+    expect(history[0]?.questionReviews).toContain('Jawabanmu tepat.');
   });
 
   test('handleWebChat validates empty input and uses local tool route', async () => {
@@ -835,13 +1088,15 @@ describe('api endpoints', () => {
     const logs = await app.request('/admin/users/limited%40example.com/logs', { headers: adminHeaders });
     expect(logs.status).toBe(200);
     const logsJson = await logs.json() as {
-      user: { totalUserMessages: number; joinedAt: string | null };
+      user: { totalUserMessages: number; joinedAt: string | null; totalGrillSessions?: number };
+      grillHistory?: Array<{ topic: string; endedReason: string }>;
       logs: Array<{ role: string; content: string }>;
     };
     expect(logsJson.user.joinedAt).not.toBeNull();
     expect(logsJson.user.totalUserMessages).toBeGreaterThanOrEqual(5);
     expect(logsJson.logs.some((item) => item.role === 'user')).toBe(true);
     expect(logsJson.logs.some((item) => item.role === 'assistant')).toBe(true);
+    expect(logsJson.user.totalGrillSessions ?? 0).toBe(0);
 
     const reset = await app.request('/admin/users/limited%40example.com', {
       method: 'PATCH',

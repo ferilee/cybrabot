@@ -1,6 +1,7 @@
 import type { AdminConfig } from './admin-config';
 import { runAgentReach } from './agent-reach';
 import { generateSkillResponse, getIntent, type ChatHistoryItem, type IntentResult } from './ai';
+import { hasActiveGrillSession, runGrillSession } from './grill-session';
 import { detectHumanisMarkdownRequest, materializeHumanisMarkdown, type HumanisExportFile } from './humanis-export';
 import { getKnowledgeContext } from './knowledge';
 import { getWebSkill, selectWebSkill } from './web-skills';
@@ -25,10 +26,14 @@ export async function runSkillChat(input: {
   adminConfig: AdminConfig;
   requestedSkillId?: string;
   intentHint?: IntentResult;
+  sessionKey?: string;
 }) {
   const history = input.history || [];
   const intentResult = input.intentHint || await getIntent(input.message, input.adminConfig);
-  const skill = selectWebSkill(input.message, input.requestedSkillId, intentResult.intent);
+  const activeGrillSession = await hasActiveGrillSession(input.sessionKey);
+  const skill = activeGrillSession
+    ? getWebSkill('grill-me')
+    : selectWebSkill(input.message, input.requestedSkillId, intentResult.intent);
 
   if (!skill) {
     return {
@@ -44,6 +49,17 @@ export async function runSkillChat(input: {
       intentModel: intentResult.model,
       exportFile: null,
     };
+  }
+
+  if (skill.id === 'grill-me' && input.sessionKey) {
+    return runGrillSession({
+      sessionKey: input.sessionKey,
+      message: input.message,
+      history,
+      adminConfig: input.adminConfig,
+      intent: intentResult.intent,
+      intentModel: intentResult.model,
+    });
   }
 
   let externalContext = '';

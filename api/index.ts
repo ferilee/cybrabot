@@ -1498,6 +1498,7 @@ function renderAdminPage(session: WebSession) {
             const data = await api('/admin/users/' + encodeURIComponent(email) + '/logs');
             const user = data.user || {};
             const logs = Array.isArray(data.logs) ? data.logs : [];
+            const grillHistory = Array.isArray(data.grillHistory) ? data.grillHistory : [];
             selectedWebUser.innerHTML = \`
               <div class="item">
                 <div class="row" style="justify-content:space-between;align-items:flex-start;">
@@ -1515,8 +1516,70 @@ function renderAdminPage(session: WebSession) {
                   <div><strong>\${escapeHtml(user.joinedAt ? new Date(user.joinedAt).toLocaleString('id-ID') : '-')}</strong><span>Bergabung sejak</span></div>
                   <div><strong>\${user.totalUserMessages ?? 0}</strong><span>Jumlah pemakaian</span></div>
                   <div><strong>\${user.totalAssistantMessages ?? 0}</strong><span>Jawaban Cybra</span></div>
+                  <div><strong>\${user.totalGrillSessions ?? 0}</strong><span>Sesi grill selesai</span></div>
                 </div>
               </div>
+              \${grillHistory.length ? \`
+                <div class="item" style="margin-top:1rem;">
+                  <strong style="display:block;margin-bottom:0.8rem;">Riwayat Grill Me</strong>
+                  <div class="list dense-list">
+                    \${grillHistory.map((session) => {
+                      const score = Number(session.correctCount || 0) + (Number(session.partialCount || 0) * 0.5);
+                      const scoreLabel = Number.isInteger(score) ? String(score) : score.toFixed(1);
+                      const timerLabel = session.timerSeconds
+                        ? (session.timerSeconds >= 60 ? Math.floor(session.timerSeconds / 60) + ' menit/soal' : session.timerSeconds + ' detik/soal')
+                        : 'tanpa timer';
+                      return \`
+                        <div class="item">
+                          <div class="row" style="justify-content:space-between;align-items:flex-start;gap:0.75rem;">
+                            <div>
+                              <strong>\${escapeHtml(session.topic || '-')}</strong>
+                              <div class="hint">\${escapeHtml(session.completedAt ? new Date(session.completedAt).toLocaleString('id-ID') : '-')}</div>
+                            </div>
+                            <div class="badge-row">
+                              <span class="badge">\${escapeHtml(session.endedReason === 'ended_by_user' ? 'diakhiri user' : 'selesai')}</span>
+                              <span class="badge">\${escapeHtml(session.hardMode ? 'hard' : 'standar')}</span>
+                            </div>
+                          </div>
+                          <div class="mini-stat" style="margin-top:0.7rem;">
+                            <div><strong>\${escapeHtml(String(session.answeredCount || 0))}/\${escapeHtml(String(session.totalQuestions || 0))}</strong><span>Soal dijawab</span></div>
+                            <div><strong>\${escapeHtml(scoreLabel)}/\${escapeHtml(String(session.answeredCount || session.totalQuestions || 0))}</strong><span>Skor akhir</span></div>
+                            <div><strong>\${escapeHtml(String(session.correctCount || 0))}</strong><span>Benar penuh</span></div>
+                            <div><strong>\${escapeHtml(timerLabel)}</strong><span>Timer</span></div>
+                          </div>
+                          \${session.finalReview ? \`
+                            <details style="margin-top:0.8rem;">
+                              <summary class="hint" style="cursor:pointer;">Lihat pembahasan akhir</summary>
+                              <div style="margin-top:0.75rem;white-space:pre-wrap;overflow-wrap:anywhere;background:rgba(15,23,42,0.5);border:1px solid rgba(148,163,184,0.18);border-radius:12px;padding:0.9rem;">\${escapeHtml(session.finalReview)}</div>
+                            </details>
+                          \` : ''}
+                          \${Array.isArray(session.questionReviews) && session.questionReviews.length ? \`
+                            <details style="margin-top:0.8rem;">
+                              <summary class="hint" style="cursor:pointer;">Lihat pembahasan per soal</summary>
+                              <div class="list dense-list" style="margin-top:0.75rem;">
+                                \${session.questionReviews.map((review) => \`
+                                  <div class="item">
+                                    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:0.75rem;">
+                                      <strong>Soal \${escapeHtml(String(review.questionNumber || '-'))}</strong>
+                                      <span class="badge">\${escapeHtml(String(review.scoreMark || '-').toLowerCase())}</span>
+                                    </div>
+                                    <div class="hint" style="margin-top:0.5rem;">Pertanyaan</div>
+                                    <div style="white-space:pre-wrap;overflow-wrap:anywhere;">\${escapeHtml(review.questionText || '-')}</div>
+                                    <div class="hint" style="margin-top:0.6rem;">Jawaban user</div>
+                                    <div style="white-space:pre-wrap;overflow-wrap:anywhere;">\${escapeHtml(review.userAnswer || '-')}</div>
+                                    <div class="hint" style="margin-top:0.6rem;">Evaluasi</div>
+                                    <div style="white-space:pre-wrap;overflow-wrap:anywhere;">\${escapeHtml(review.evaluation || '-')}</div>
+                                  </div>
+                                \`).join('')}
+                              </div>
+                            </details>
+                          \` : ''}
+                        </div>
+                      \`;
+                    }).join('')}
+                  </div>
+                </div>
+              \` : ''}
             \`;
 
             selectedWebUserLogs.style.display = logs.length ? 'grid' : 'none';
@@ -2423,6 +2486,20 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           gap: 8px;
           margin-top: 12px;
         }
+        .message-action-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 9px 13px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 999px;
+          color: #eff8ff;
+          font-size: 12px;
+          font-weight: 700;
+          background: linear-gradient(145deg, rgba(99,102,241,0.92), rgba(124,58,237,0.96));
+          box-shadow: 0 8px 18px rgba(22, 33, 71, 0.28);
+          cursor: pointer;
+        }
         .download-link {
           display: inline-flex;
           align-items: center;
@@ -2466,6 +2543,27 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         .message-tag.warn {
           background: rgba(243,178,55,0.16);
           color: #ffd998;
+        }
+        .grill-timer {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 74px;
+          padding: 3px 8px;
+          margin-left: 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.16);
+          color: #fef3c7;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          background: rgba(120,53,15,0.28);
+          vertical-align: middle;
+        }
+        .grill-timer.expired {
+          color: #fecaca;
+          border-color: rgba(239,68,68,0.24);
+          background: rgba(127,29,29,0.34);
         }
         .typing .bubble { flex: 0 0 auto; padding-right: 28px; }
         .typing-dots { display: flex; gap: 4px; padding: 6px 0 2px; }
@@ -3264,6 +3362,99 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             '</a></div>';
         }
 
+        function parseTimerSeconds(text) {
+          const match = String(text || '').match(/\[(\d{2}):(\d{2})\]/);
+          if (!match) return null;
+          const minutes = Number(match[1] || 0);
+          const seconds = Number(match[2] || 0);
+          if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) return null;
+          return (minutes * 60) + seconds;
+        }
+
+        function formatSecondsLabel(totalSeconds) {
+          const seconds = Math.max(0, Math.floor(totalSeconds));
+          const minutesPart = String(Math.floor(seconds / 60)).padStart(2, '0');
+          const secondsPart = String(seconds % 60).padStart(2, '0');
+          return '[' + minutesPart + ':' + secondsPart + ']';
+        }
+
+        function ensureMessageActions(bubble) {
+          return bubble.querySelector('.message-actions') || (() => {
+            const node = document.createElement('div');
+            node.className = 'message-actions';
+            bubble.appendChild(node);
+            return node;
+          })();
+        }
+
+        function appendMessageAction(actionsWrap, options) {
+          if (!actionsWrap || !options || !options.action) return;
+          if (actionsWrap.querySelector('[data-action="' + options.action + '"]')) return;
+
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'message-action-button';
+          button.dataset.action = options.action;
+          button.textContent = options.label;
+          button.addEventListener('click', async () => {
+            button.disabled = true;
+            await submitMessage(options.message, { forceSkillId: 'grill-me' });
+          });
+          actionsWrap.appendChild(button);
+        }
+
+        function enhanceGrillMessage(bubble, meta = {}) {
+          if (!bubble || meta.skillId !== 'grill-me') return;
+          const contentEl = bubble.querySelector('.message-content');
+          if (!contentEl) return;
+
+          const originalContent = String(meta.originalContent || '');
+          const timerSeconds = parseTimerSeconds(originalContent);
+          if (timerSeconds !== null) {
+            contentEl.innerHTML = contentEl.innerHTML.replace(/\[(\d{2}):(\d{2})\]/, '<span class="grill-timer" data-seconds="' + String(timerSeconds) + '">[$1:$2]</span>');
+            const timerEl = contentEl.querySelector('.grill-timer');
+            if (timerEl) {
+              let remaining = timerSeconds;
+              timerEl.textContent = formatSecondsLabel(remaining);
+              const intervalId = window.setInterval(() => {
+                remaining -= 1;
+                timerEl.textContent = formatSecondsLabel(remaining);
+                if (remaining <= 0) {
+                  timerEl.classList.add('expired');
+                  window.clearInterval(intervalId);
+                }
+              }, 1000);
+            }
+          }
+
+          const wantsContinueButton =
+            /lanjut ke soal berikutnya/i.test(originalContent) &&
+            !/sesi selesai|latihan selesai|semua soal selesai/i.test(originalContent);
+
+          const wantsEndButton =
+            !/sesi latihan diakhiri|sesi latihan sudah selesai|kalau mau, kirim topik baru/i.test(originalContent);
+
+          const actionsWrap = wantsContinueButton || wantsEndButton
+            ? ensureMessageActions(bubble)
+            : null;
+
+          if (wantsContinueButton) {
+            appendMessageAction(actionsWrap, {
+              action: 'grill-continue',
+              label: 'Lanjut ke Soal Berikutnya',
+              message: 'lanjut',
+            });
+          }
+
+          if (wantsEndButton) {
+            appendMessageAction(actionsWrap, {
+              action: 'grill-end',
+              label: 'Akhiri Sesi',
+              message: 'akhiri sesi',
+            });
+          }
+        }
+
         function addMessage(role, content, meta = {}) {
           if (welcome) welcome.hidden = true;
           document.getElementById('typingMessage')?.remove();
@@ -3293,6 +3484,10 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             renderMessageActions(meta) + renderMetaTags(meta);
           row.append(avatar, bubble);
           messages.appendChild(row);
+          enhanceGrillMessage(bubble, {
+            skillId: meta.skillId,
+            originalContent: content,
+          });
           renderMath(bubble.querySelector('.message-content'));
           messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
         }
@@ -3443,7 +3638,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           applyQuota(data.quota);
         }
 
-        async function submitMessage(rawMessage) {
+        async function submitMessage(rawMessage, options = {}) {
           const message = String(rawMessage || '').trim();
           if (!message) return;
 
@@ -3461,7 +3656,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 message,
-                skillId: state.selectedSkillId || undefined,
+                skillId: options.forceSkillId || state.selectedSkillId || undefined,
                 history: state.history.slice(-12),
               }),
             });
@@ -3472,6 +3667,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             }
             applyQuota(data.quota);
             addMessage('assistant', data.reply || '', {
+              skillId: data.skill?.id,
               skillTitle: data.skill?.title,
               route: data.route,
               intent: data.intent,
@@ -4172,6 +4368,7 @@ app.post('/api/chat', async (c) => {
     message: body.message,
     skillId: typeof body.skillId === 'string' ? body.skillId : undefined,
     history,
+    sessionKey: session.email,
   });
 
   await appendWebChatLog({
@@ -4210,6 +4407,7 @@ app.post('/api/integration/chat', async (c) => {
   const result = await handleWebChat({
     message: body.message,
     history: body.history,
+    sessionKey: 'integration:' + (c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'anonymous'),
   });
 
   return c.json(result);

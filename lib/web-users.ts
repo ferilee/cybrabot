@@ -1,7 +1,18 @@
 import { desc, eq } from 'drizzle-orm';
 import { db } from '../db';
 import { webChatLogs, webUsers } from '../db/schema';
+import { listPersistedGrillHistoryByEmail } from './grill-session-store';
 import type { WebSession } from './web-auth';
+
+function parseQuestionReviews(raw: string | null | undefined) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 export const WEB_CHAT_QUOTA_LIMIT = 5;
 export const WEB_CHAT_QUOTA_WINDOW_DAYS = 3;
@@ -356,6 +367,7 @@ export async function getManagedWebUserLogs(email: string, limit = 40) {
     orderBy: [desc(webChatLogs.createdAt), desc(webChatLogs.id)],
     limit,
   });
+  const grillHistory = await listPersistedGrillHistoryByEmail(normalizedEmail, 12);
 
   const totalUserMessages = logs.filter((item) => item.role === 'user').length;
   const totalAssistantMessages = logs.filter((item) => item.role === 'assistant').length;
@@ -375,7 +387,23 @@ export async function getManagedWebUserLogs(email: string, limit = 40) {
       quota: toWebQuotaStatus(user),
       totalUserMessages,
       totalAssistantMessages,
+      totalGrillSessions: grillHistory.length,
     },
+    grillHistory: grillHistory.map((item) => ({
+      id: item.id,
+      topic: item.topic,
+      totalQuestions: item.totalQuestions,
+      answeredCount: item.answeredCount,
+      correctCount: item.correctCount,
+      partialCount: item.partialCount,
+      timerSeconds: item.timerSeconds,
+      hardMode: Boolean(item.hardMode),
+      endedReason: item.endedReason,
+      finalReview: item.finalReview,
+      questionReviews: parseQuestionReviews(item.questionReviews),
+      createdAt: item.createdAt?.toISOString?.() || null,
+      completedAt: item.completedAt?.toISOString?.() || null,
+    })),
     logs: logs
       .slice()
       .reverse()

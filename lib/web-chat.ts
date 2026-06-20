@@ -15,6 +15,7 @@ export type WebChatRequest = {
   message: string;
   skillId?: string;
   history?: WebChatHistoryItem[];
+  sessionKey?: string;
 };
 
 function stripHtml(text: string) {
@@ -91,6 +92,7 @@ export async function handleWebChat(input: WebChatRequest) {
     history: toAiHistory(input.history),
     adminConfig,
     requestedSkillId: input.skillId,
+    sessionKey: input.sessionKey,
   });
 
   await logEvent('web_chat.ai_used', {
