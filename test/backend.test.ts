@@ -736,7 +736,7 @@ describe('api endpoints', () => {
     const auth = await sessionHeaders('baru@example.com');
     const chat = await app.request('/chat', { headers: auth });
     expect(chat.status).toBe(302);
-    expect(chat.headers.get('location')).toBe('/profile/setup');
+    expect(chat.headers.get('location')).toBe('/profile/setup?next=%2Fchat');
 
     const profilePage = await app.request('/profile/setup', { headers: auth });
     expect(profilePage.status).toBe(200);
@@ -764,6 +764,33 @@ describe('api endpoints', () => {
     expect(me.status).toBe(200);
     expect(meJson.quota.limit).toBe(5);
     expect(meJson.quota.remaining).toBe(5);
+  });
+
+  test('incomplete profile preserves intended destination through onboarding', async () => {
+    await seedWebUserForTest({
+      email: 'redirectbaru@example.com',
+      role: 'visitor',
+      googleName: 'Redirect Baru',
+      profileCompleted: false,
+    });
+
+    const auth = await sessionHeaders('redirectbaru@example.com');
+    const chat = await app.request('/chat', { headers: auth });
+    expect(chat.status).toBe(302);
+    expect(chat.headers.get('location')).toBe('/profile/setup?next=%2Fchat');
+
+    const root = await app.request('/', { headers: auth });
+    expect(root.status).toBe(302);
+    expect(root.headers.get('location')).toBe('/profile/setup');
+
+    const login = await app.request('/login?next=%2Fdashboard', { headers: auth });
+    expect(login.status).toBe(302);
+    expect(login.headers.get('location')).toBe('/profile/setup?next=%2Fdashboard');
+
+    const profilePage = await app.request('/profile/setup?next=%2Fdashboard', { headers: auth });
+    const html = await profilePage.text();
+    expect(profilePage.status).toBe(200);
+    expect(html).toContain('id="nextPath" value="/dashboard"');
   });
 
   test('web chat quota blocks after five messages and admin can manage web users', async () => {

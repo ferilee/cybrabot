@@ -99,7 +99,8 @@ async function requireCompleteWebAccount(c: Context, session: WebSession | null,
     if (asApi) {
       return c.json({ error: 'Web account not found' }, 404);
     }
-    c.header('location', `/profile/setup`);
+    const nextPath = new URL(c.req.url).pathname;
+    c.header('location', `/profile/setup?next=${encodeURIComponent(nextPath)}`);
     c.status(302);
     return null;
   }
@@ -118,7 +119,8 @@ async function requireCompleteWebAccount(c: Context, session: WebSession | null,
     if (asApi) {
       return c.json({ error: 'Profile incomplete' }, 428);
     }
-    c.header('location', `/profile/setup`);
+    const nextPath = new URL(c.req.url).pathname;
+    c.header('location', `/profile/setup?next=${encodeURIComponent(nextPath)}`);
     c.status(302);
     return null;
   }
@@ -477,7 +479,8 @@ function renderLoginPage(options: {
   `;
 }
 
-function renderProfileSetupPage(session: WebSession, options?: { error?: string }) {
+function renderProfileSetupPage(session: WebSession, options?: { error?: string; nextPath?: string }) {
+  const nextPath = options?.nextPath?.startsWith('/') ? options.nextPath : (session.role === 'admin' ? '/dashboard' : '/chat');
   return `
     <!DOCTYPE html>
     <html lang="id">
@@ -581,6 +584,7 @@ function renderProfileSetupPage(session: WebSession, options?: { error?: string 
         <p>Akun <strong>${escapeHtml(session.email)}</strong> perlu melengkapi profil sebelum memakai aplikasi. Data wilayah memakai API statis wilayah Indonesia.</p>
         ${options?.error ? `<div class="status">${escapeHtml(options.error)}</div>` : ''}
         <form id="profileForm">
+          <input type="hidden" id="nextPath" value="${escapeHtml(nextPath)}" />
           <div class="grid">
             <label class="full">
               Nama lengkap
@@ -688,7 +692,8 @@ function renderProfileSetupPage(session: WebSession, options?: { error?: string 
             submitButton.disabled = false;
             return;
           }
-          window.location.href = '${escapeHtml('/chat')}';
+          const nextPath = document.getElementById('nextPath')?.value || '${escapeHtml('/chat')}';
+          window.location.href = nextPath.startsWith('/') ? nextPath : '${escapeHtml('/chat')}';
         });
 
         loadProvinces().catch(() => {
@@ -2126,13 +2131,17 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         }
         .mobile-menu {
           display: none;
-          width: 38px;
+          min-width: 0;
           height: 38px;
+          padding: 0 12px;
           border: 1px solid rgba(255,255,255,0.16);
-          border-radius: 50%;
+          border-radius: 999px;
           color: #fff;
           background: rgba(6,25,41,0.25);
           cursor: pointer;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
         }
         .chat-title h1 {
           margin: 0;
@@ -2666,6 +2675,146 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           font-weight: 600;
           white-space: nowrap;
         }
+        .mobile-skill-sheet-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 30;
+          display: none;
+          align-items: end;
+          background: rgba(2,10,18,0.54);
+          opacity: 0;
+          visibility: hidden;
+          transition: opacity 220ms ease, visibility 220ms ease;
+        }
+        .mobile-skill-sheet-backdrop.open {
+          opacity: 1;
+          visibility: visible;
+        }
+        .mobile-skill-sheet {
+          width: 100%;
+          max-height: min(84dvh, 760px);
+          padding: 14px 14px max(18px, env(safe-area-inset-bottom));
+          border-radius: 28px 28px 0 0;
+          border: 1px solid rgba(255,255,255,0.12);
+          border-bottom: 0;
+          background: linear-gradient(180deg, rgba(16,53,82,0.98), rgba(8,26,43,0.98));
+          box-shadow: 0 -24px 60px rgba(0,0,0,0.34);
+          transform: translateY(100%);
+          transition: transform 240ms ease;
+        }
+        .mobile-skill-sheet-backdrop.open .mobile-skill-sheet {
+          transform: translateY(0);
+        }
+        .sheet-handle {
+          width: 42px;
+          height: 4px;
+          margin: 0 auto 12px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.26);
+        }
+        .mobile-skill-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .mobile-skill-header h3 {
+          margin: 0;
+          font-size: 18px;
+          letter-spacing: -0.03em;
+        }
+        .mobile-skill-header p {
+          margin: 4px 0 0;
+          color: rgba(255,255,255,0.62);
+          font-size: 12px;
+        }
+        .sheet-close {
+          display: grid;
+          place-items: center;
+          width: 36px;
+          height: 36px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 50%;
+          color: rgba(255,255,255,0.86);
+          background: rgba(255,255,255,0.05);
+          cursor: pointer;
+        }
+        .mobile-sheet-body {
+          margin-top: 14px;
+          display: grid;
+          gap: 14px;
+          max-height: calc(min(84dvh, 760px) - 86px - max(18px, env(safe-area-inset-bottom)));
+          overflow-y: auto;
+          overflow-x: hidden;
+          padding-right: 2px;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(255,255,255,0.22) transparent;
+          -webkit-overflow-scrolling: touch;
+        }
+        .mobile-sheet-section {
+          padding: 12px;
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 18px;
+          background: rgba(255,255,255,0.04);
+        }
+        .mobile-sheet-label {
+          margin: 0 0 10px;
+          color: rgba(255,255,255,0.52);
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+        }
+        .mobile-skill-list {
+          display: grid;
+          gap: 8px;
+        }
+        .mobile-skill-list .skill-button {
+          padding: 12px 13px;
+          border-radius: 18px;
+          background: rgba(4,18,31,0.22);
+        }
+        .mobile-skill-list .skill-button strong {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .skill-badge {
+          display: inline-flex;
+          align-items: center;
+          padding: 3px 7px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.12);
+          color: rgba(255,255,255,0.72);
+          font-size: 9px;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          background: rgba(255,255,255,0.06);
+        }
+        .mobile-sheet-account {
+          display: grid;
+          gap: 10px;
+        }
+        .mobile-sheet-account .account-header {
+          margin-top: 0;
+        }
+        .mobile-account-links {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .mobile-account-links a {
+          padding: 10px 8px;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 14px;
+          color: rgba(255,255,255,0.8);
+          text-align: center;
+          text-decoration: none;
+          font-size: 11px;
+          background: rgba(255,255,255,0.05);
+        }
         .sidebar-backdrop { display: none; }
         @keyframes arrive {
           from { opacity: 0; transform: translateY(9px); }
@@ -2689,32 +2838,10 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             border-radius: 0;
           }
           .sidebar {
-            position: fixed;
-            z-index: 20;
-            inset: 10px auto 10px 10px;
-            width: min(290px, calc(100vw - 40px));
-            max-height: calc(100dvh - 20px);
-            overflow-y: auto;
-            overflow-x: hidden;
-            padding-bottom: max(26px, env(safe-area-inset-bottom));
-            -webkit-overflow-scrolling: touch;
-            touch-action: pan-y;
-            transform: translateX(calc(-100% - 24px));
-            transition: transform 220ms ease;
+            display: none;
           }
-          .sidebar.open { transform: translateX(0); }
-          .sidebar-backdrop {
-            position: fixed;
-            z-index: 19;
-            inset: 0;
-            display: block;
-            visibility: hidden;
-            opacity: 0;
-            border: 0;
-            background: rgba(3,14,24,0.48);
-            transition: 220ms ease;
-          }
-          .sidebar-backdrop.open { visibility: visible; opacity: 1; }
+          .sidebar-backdrop { display: none; }
+          .mobile-skill-sheet-backdrop { display: flex; }
           .mobile-menu { display: grid; }
           .chat-header { padding: 13px 14px 8px; }
           .model-pill { max-width: 105px; }
@@ -2743,6 +2870,9 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             align-items: flex-start;
             flex-direction: column;
           }
+          .mobile-account-links {
+            grid-template-columns: 1fr;
+          }
         }
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after {
@@ -2754,7 +2884,6 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
       </style>
     </head>
     <body>
-      <button id="sidebarBackdrop" class="sidebar-backdrop" aria-label="Tutup menu"></button>
       <div class="app-shell">
         <aside id="sidebar" class="sidebar glass">
           <div class="brand">
@@ -2806,7 +2935,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         <main class="chat glass">
           <header class="chat-header">
             <div class="chat-title">
-              <button id="mobileMenu" class="mobile-menu" type="button" aria-label="Buka menu">☰</button>
+              <button id="mobileMenu" class="mobile-menu" type="button" aria-label="Pilih keahlian">Skills</button>
               <div>
                 <h1 id="activeSkillTitle">Auto Skill</h1>
                 <p id="activeSkillDescription">Cybra memilih kemampuan yang paling cocok.</p>
@@ -2846,6 +2975,61 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             <div class="composer-note">Enter untuk kirim · Shift + Enter untuk baris baru</div>
           </footer>
         </main>
+      </div>
+      <div id="mobileSkillSheetBackdrop" class="mobile-skill-sheet-backdrop" aria-hidden="true">
+        <div class="mobile-skill-sheet" role="dialog" aria-modal="true" aria-labelledby="mobileSkillSheetTitle">
+          <div class="sheet-handle"></div>
+          <div class="mobile-skill-header">
+            <div>
+              <h3 id="mobileSkillSheetTitle">Pilih keahlian</h3>
+              <p>Mode mobile yang fokus ke skill, status, dan akses cepat.</p>
+            </div>
+            <button id="mobileSkillSheetClose" class="sheet-close" type="button" aria-label="Tutup panel skill">✕</button>
+          </div>
+          <div class="mobile-sheet-body">
+            <section class="mobile-sheet-section">
+              <div class="mobile-sheet-label">Daftar Keahlian</div>
+              <div id="mobileSkillList" class="mobile-skill-list"></div>
+            </section>
+            <section class="mobile-sheet-section">
+              <div class="mobile-sheet-label">Agent Reach</div>
+              <div id="mobileReachStatus" class="reach-list" style="padding:0;"></div>
+            </section>
+            <section class="mobile-sheet-section mobile-sheet-account">
+              <div class="mobile-sheet-label">Akun</div>
+              <div class="account-role">${escapeHtml(session.role)}</div>
+              <div class="account-header">
+                ${avatarUrl
+                  ? `<img class="account-photo" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(displayName)}">`
+                  : `<div class="account-photo-fallback">${escapeHtml(avatarInitial)}</div>`
+                }
+                <div style="min-width:0;">
+                  <div class="account-name" style="margin-top:0;">${escapeHtml(displayName)}</div>
+                  <div class="account-email">${escapeHtml(session.email)}</div>
+                  <div class="account-email">${escapeHtml([account.villageName, account.districtName, account.regencyName, account.provinceName].filter(Boolean).join(', ') || 'Wilayah belum diisi')}</div>
+                </div>
+              </div>
+              <div class="quota-card" style="margin-top:0;">
+                <div class="quota-topline">
+                  <strong>${limit} chat limit (3 hari)</strong>
+                  <span class="quota-pill">Free</span>
+                </div>
+                <div class="quota-meta">
+                  <span id="mobileQuotaLabel">${percentLeft}% left</span>
+                  <span id="mobileQuotaReset">resets ${escapeHtml(quotaResetLabel)}</span>
+                </div>
+                <div class="quota-track">
+                  <div id="mobileQuotaBar" class="quota-fill" style="width:${progressWidth}%;background:${quotaTone};"></div>
+                </div>
+              </div>
+              <div class="mobile-account-links">
+                ${session.role === 'admin' ? '<a href="/dashboard">Dashboard</a>' : '<a href="/chat">Chat</a>'}
+                ${session.role === 'admin' ? '<a href="/admin">Admin</a>' : '<a href="/chat">Skill Aktif</a>'}
+                <a href="/logout">Logout</a>
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
       <div id="introModalBackdrop" class="intro-modal-backdrop" aria-hidden="true">
         <div class="intro-modal" role="dialog" aria-modal="true" aria-labelledby="introModalTitle">
@@ -2888,7 +3072,9 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
       </div>
       <script>
         const skillList = document.getElementById('skillList');
+        const mobileSkillList = document.getElementById('mobileSkillList');
         const reachStatus = document.getElementById('reachStatus');
+        const mobileReachStatus = document.getElementById('mobileReachStatus');
         const messages = document.getElementById('messages');
         const form = document.getElementById('chatForm');
         const input = document.getElementById('messageInput');
@@ -2899,12 +3085,16 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         const quotaLabel = document.getElementById('quotaLabel');
         const quotaBar = document.getElementById('quotaBar');
         const quotaReset = document.getElementById('quotaReset');
+        const mobileQuotaLabel = document.getElementById('mobileQuotaLabel');
+        const mobileQuotaBar = document.getElementById('mobileQuotaBar');
+        const mobileQuotaReset = document.getElementById('mobileQuotaReset');
         const welcome = document.getElementById('welcome');
         const introButton = document.getElementById('introButton');
         const clearButton = document.getElementById('clearButton');
         const sidebar = document.getElementById('sidebar');
-        const sidebarBackdrop = document.getElementById('sidebarBackdrop');
         const mobileMenu = document.getElementById('mobileMenu');
+        const mobileSkillSheetBackdrop = document.getElementById('mobileSkillSheetBackdrop');
+        const mobileSkillSheetClose = document.getElementById('mobileSkillSheetClose');
         const introModalBackdrop = document.getElementById('introModalBackdrop');
         const introModalClose = document.getElementById('introModalClose');
         const state = {
@@ -2950,20 +3140,31 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         }
 
         function applyQuota(quota) {
-          if (!quota || !quotaLabel || !quotaBar || !quotaReset) return;
+          if (!quota) return;
           const remaining = Number(quota.remaining || 0);
           const limit = Number(quota.limit || 0);
           const percentLeft = Math.max(0, Math.min(100, limit ? Math.round((remaining / limit) * 100) : 0));
-          quotaLabel.textContent = percentLeft + '% left';
-          quotaBar.style.width = Math.max(0, Math.min(100, limit ? (remaining / limit) * 100 : 0)) + '%';
-          quotaBar.style.background = remaining > 0
+          const width = Math.max(0, Math.min(100, limit ? (remaining / limit) * 100 : 0)) + '%';
+          const background = remaining > 0
             ? 'linear-gradient(90deg,#22d3ee,#34d399)'
             : 'linear-gradient(90deg,#f59e0b,#ef4444)';
           const countdown = formatResetCountdown(quota.resetsAt);
           const resetTime = formatResetTime(quota.resetsAt);
-          quotaReset.textContent = quota.resetsAt
+          const resetText = quota.resetsAt
             ? 'resets ' + countdown + ' • ' + resetTime
             : 'reset belum tersedia';
+          if (quotaLabel) quotaLabel.textContent = percentLeft + '% left';
+          if (quotaBar) {
+            quotaBar.style.width = width;
+            quotaBar.style.background = background;
+          }
+          if (quotaReset) quotaReset.textContent = resetText;
+          if (mobileQuotaLabel) mobileQuotaLabel.textContent = percentLeft + '% left';
+          if (mobileQuotaBar) {
+            mobileQuotaBar.style.width = width;
+            mobileQuotaBar.style.background = background;
+          }
+          if (mobileQuotaReset) mobileQuotaReset.textContent = resetText;
           sendButton.disabled = remaining <= 0;
           input.disabled = remaining <= 0;
           input.placeholder = remaining <= 0
@@ -3119,8 +3320,19 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         }
 
         function closeSidebar() {
-          sidebar.classList.remove('open');
-          sidebarBackdrop.classList.remove('open');
+          sidebar?.classList.remove('open');
+        }
+
+        function openMobileSkillSheet() {
+          if (!mobileSkillSheetBackdrop) return;
+          mobileSkillSheetBackdrop.classList.add('open');
+          mobileSkillSheetBackdrop.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeMobileSkillSheet() {
+          if (!mobileSkillSheetBackdrop) return;
+          mobileSkillSheetBackdrop.classList.remove('open');
+          mobileSkillSheetBackdrop.setAttribute('aria-hidden', 'true');
         }
 
         function hideIntroModal() {
@@ -3171,44 +3383,57 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           const selected = state.skills.find((skill) => skill.id === skillId);
           activeSkillTitle.textContent = selected ? selected.title : 'Auto Skill';
           activeSkillDescription.textContent = selected ? selected.description : 'Cybra memilih kemampuan yang paling cocok.';
-          for (const button of skillList.querySelectorAll('button')) {
-            button.classList.toggle('active', button.dataset.skillId === skillId);
+          for (const list of [skillList, mobileSkillList]) {
+            if (!list) continue;
+            for (const button of list.querySelectorAll('button')) {
+              button.classList.toggle('active', button.dataset.skillId === skillId);
+            }
           }
           closeSidebar();
+          closeMobileSkillSheet();
+        }
+
+        function renderSkillButtons(target) {
+          if (!target) return;
+          target.innerHTML = '';
+
+          const autoButton = document.createElement('button');
+          autoButton.className = 'skill-button' + (state.selectedSkillId ? '' : ' active');
+          autoButton.dataset.skillId = '';
+          autoButton.innerHTML = '<strong>✦ Auto Skill <span class="skill-badge">auto</span></strong><span>Biarkan Cybra memilih modul yang sesuai</span>';
+          autoButton.addEventListener('click', () => selectSkill(''));
+          target.appendChild(autoButton);
+
+          for (const skill of state.skills) {
+            const button = document.createElement('button');
+            button.className = 'skill-button' + (state.selectedSkillId === skill.id ? ' active' : '');
+            button.dataset.skillId = skill.id;
+            const badge = skill.modelHint ? '<span class="skill-badge">' + escapeHtml(skill.modelHint) + '</span>' : '';
+            button.innerHTML = '<strong>' + escapeHtml(skill.title) + badge + '</strong><span>' + escapeHtml(skill.description || '') + '</span>';
+            button.addEventListener('click', () => selectSkill(skill.id));
+            target.appendChild(button);
+          }
         }
 
         async function loadSkills() {
           const response = await fetch('/api/chat/skills');
           const data = await response.json();
           state.skills = Array.isArray(data.skills) ? data.skills : [];
-          skillList.innerHTML = '';
-
-          const autoButton = document.createElement('button');
-          autoButton.className = 'skill-button active';
-          autoButton.dataset.skillId = '';
-          autoButton.innerHTML = '<strong>✦ Auto Skill</strong><span>Biarkan Cybra memilih modul yang sesuai</span>';
-          autoButton.addEventListener('click', () => selectSkill(''));
-          skillList.appendChild(autoButton);
-
-          for (const skill of state.skills) {
-            const button = document.createElement('button');
-            button.className = 'skill-button';
-            button.dataset.skillId = skill.id;
-            button.innerHTML = '<strong>' + escapeHtml(skill.title) + '</strong><span>' + escapeHtml(skill.description || '') + '</span>';
-            button.addEventListener('click', () => selectSkill(skill.id));
-            skillList.appendChild(button);
-          }
+          renderSkillButtons(skillList);
+          renderSkillButtons(mobileSkillList);
         }
 
         async function loadAgentReachStatus() {
           const response = await fetch('/api/agent-reach/status');
           const data = await response.json();
           const channels = Array.isArray(data.channels) ? data.channels : [];
-          reachStatus.innerHTML = channels.map((channel) => {
+          const html = channels.map((channel) => {
             const dotClass = channel.available ? 'reach-dot' : 'reach-dot missing';
             return '<span class="reach-chip" title="' + escapeHtml(channel.detail) + '">' +
               '<i class="' + dotClass + '"></i>' + escapeHtml(channel.title) + '</span>';
           }).join('');
+          if (reachStatus) reachStatus.innerHTML = html;
+          if (mobileReachStatus) mobileReachStatus.innerHTML = html;
         }
 
         async function loadMe() {
@@ -3299,11 +3524,15 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           input.focus();
         });
 
-        mobileMenu.addEventListener('click', () => {
-          sidebar.classList.add('open');
-          sidebarBackdrop.classList.add('open');
+        mobileMenu?.addEventListener('click', () => {
+          openMobileSkillSheet();
         });
-        sidebarBackdrop.addEventListener('click', closeSidebar);
+        mobileSkillSheetClose?.addEventListener('click', closeMobileSkillSheet);
+        mobileSkillSheetBackdrop?.addEventListener('click', (event) => {
+          if (event.target === mobileSkillSheetBackdrop) {
+            closeMobileSkillSheet();
+          }
+        });
         introButton?.addEventListener('click', () => showIntroModal('manual'));
         introModalClose?.addEventListener('click', hideIntroModal);
         introModalBackdrop?.addEventListener('click', (event) => {
@@ -3312,6 +3541,9 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           }
         });
         document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && mobileSkillSheetBackdrop?.classList.contains('open')) {
+            closeMobileSkillSheet();
+          }
           if (event.key === 'Escape' && introModalBackdrop?.classList.contains('open')) {
             hideIntroModal();
           }
@@ -3621,7 +3853,8 @@ app.get('/login', async (c) => {
   if (session) {
     const account = await getCurrentWebAccount(session);
     if (!isWebProfileComplete(account)) {
-      return c.redirect('/profile/setup');
+      const nextPath = c.req.query('next') || '/chat';
+      return c.redirect('/profile/setup?next=' + encodeURIComponent(nextPath));
     }
     return c.redirect(session.role === 'admin' ? '/dashboard' : '/chat');
   }
@@ -3656,7 +3889,7 @@ app.get('/auth/google/callback', async (c) => {
     const session = await createWebSessionFromGoogle(c, code);
     const account = await syncWebUserAccount(session);
     if (!isWebProfileComplete(account)) {
-      return c.redirect('/profile/setup');
+      return c.redirect('/profile/setup?next=' + encodeURIComponent(state));
     }
     return c.redirect(session.role === 'admin' && state === '/chat' ? '/dashboard' : state);
   } catch (error) {
@@ -3683,6 +3916,7 @@ app.get('/profile/setup', async (c) => {
 
   return c.html(renderProfileSetupPage(session, {
     error: c.req.query('error') || undefined,
+    nextPath: c.req.query('next') || undefined,
   }));
 });
 
