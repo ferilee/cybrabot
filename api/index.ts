@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { logger } from 'hono/logger';
 import type { Context } from 'hono';
+import { cors } from 'hono/cors';
 import { join } from 'path';
 import { handleUpdate } from '../bot';
 import { getAdminConfig, isValidAdminToken, saveAdminConfig } from '../lib/admin-config';
@@ -40,6 +41,7 @@ import {
 const app = new Hono();
 
 app.use('*', logger());
+app.use('/api/integration/*', cors());
 
 function escapeHtml(value: string) {
   return value
