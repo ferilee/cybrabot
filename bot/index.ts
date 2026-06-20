@@ -1819,6 +1819,8 @@ bot.on('message:photo', async (ctx) => {
 bot.on('message:text', async (ctx) => {
   const startedAt = Date.now();
   const stopIndicator = startProcessingIndicator(ctx, 'text');
+  let failureStage = 'startup';
+  let normalizedTextForLog = '';
   try {
     if (isFromBotAccount(ctx)) {
       return;
@@ -1830,6 +1832,7 @@ bot.on('message:text', async (ctx) => {
     }
 
     const text = normalizeIncomingText(rawText, ctx);
+    normalizedTextForLog = text;
     const userId = ctx.from.id;
     await ensureUserRegistered(ctx.from);
     const adminConfig = await getAdminConfig();
@@ -1846,31 +1849,7 @@ bot.on('message:text', async (ctx) => {
       chatType: ctx.chat?.type,
     });
 
-    // 1. NLP Analysis
     const analysis = analyzeText(text);
-    
-    // 2. AI Intent Routing
-    const intentResult = await getIntent(text, adminConfig);
-    await logEvent('message.intent_classified', {
-      userId,
-      intent: intentResult.intent,
-      model: intentResult.model,
-      latencyMs: intentResult.latencyMs,
-      fallback: intentResult.fallback,
-      hasNumbers: analysis.hasNumbers,
-      isQuestion: analysis.isQuestion,
-      wordCount: analysis.wordCount,
-    });
-
-    // 3. Save User Message
-    await db.insert(messages).values({
-      userId,
-      content: rawText,
-      role: 'user',
-      intent: intentResult.intent,
-    });
-
-    const history = await getConversationHistory(userId);
     const lowerText = text.toLowerCase();
     const activeDocument = await getActiveDocumentSession(userId);
     if (lowerText.startsWith('dokumen:')) {
@@ -1896,6 +1875,7 @@ bot.on('message:text', async (ctx) => {
 
     const preferenceUpdate = detectPreferenceUpdate(text);
     if (preferenceUpdate) {
+      failureStage = 'save_preferences';
       const savedPreferences = await saveUserPreferences(userId, preferenceUpdate);
       const confirmation = formatPreferenceConfirmation(savedPreferences);
       await logEvent('message.preference_updated', {
@@ -1914,22 +1894,30 @@ bot.on('message:text', async (ctx) => {
       return;
     }
 
-    const preferences = await getUserPreferences(userId);
     const toolResult = runLocalTool(text, adminConfig);
 
     if (toolResult.handled && toolResult.response) {
+      failureStage = 'save_user_message_tool';
+      await db.insert(messages).values({
+        userId,
+        content: rawText,
+        role: 'user',
+        intent: toolResult.toolName || 'tool',
+      });
       await logEvent('message.tool_used', {
         userId,
         toolName: toolResult.toolName,
         metadata: toolResult.metadata || {},
       });
+      failureStage = 'reply_tool';
       await replySafely(ctx, toolResult.response);
 
+      failureStage = 'save_tool_response';
       await db.insert(messages).values({
         userId,
         content: toolResult.response,
         role: 'bot',
-        intent: toolResult.toolName || intentResult.intent,
+        intent: toolResult.toolName || 'tool',
       });
 
       await logEvent('message.completed', {
@@ -1941,12 +1929,38 @@ bot.on('message:text', async (ctx) => {
       return;
     }
 
+    failureStage = 'intent_classification';
+    const intentResult = await getIntent(text, adminConfig);
+    await logEvent('message.intent_classified', {
+      userId,
+      intent: intentResult.intent,
+      model: intentResult.model,
+      latencyMs: intentResult.latencyMs,
+      fallback: intentResult.fallback,
+      hasNumbers: analysis.hasNumbers,
+      isQuestion: analysis.isQuestion,
+      wordCount: analysis.wordCount,
+    });
+
+    failureStage = 'save_user_message_ai';
+    await db.insert(messages).values({
+      userId,
+      content: rawText,
+      role: 'user',
+      intent: intentResult.intent,
+    });
+
+    failureStage = 'load_history';
+    const history = await getConversationHistory(userId);
+
+    failureStage = 'skill_chat';
     const response = await runSkillChat({
       message: text,
       history,
       adminConfig,
       intentHint: intentResult,
     });
+    failureStage = 'telegram_format';
     const telegramReply = formatTelegramRichText(response.reply);
 
     await logEvent('message.ai_used', {
@@ -1961,9 +1975,11 @@ bot.on('message:text', async (ctx) => {
       fallback: response.fallback,
       reach: response.reach,
     });
+    failureStage = 'reply_ai';
     await replySafely(ctx, telegramReply);
 
     if (response.exportFile) {
+      failureStage = 'reply_export_file';
       await ctx.replyWithDocument(new InputFile(response.exportFile.outputPath, response.exportFile.fileName), {
         caption:
           `Berikut file markdown hasil penjelasan humanis.\n` +
@@ -1973,6 +1989,7 @@ bot.on('message:text', async (ctx) => {
       });
     }
 
+    failureStage = 'save_ai_response';
     await db.insert(messages).values({
       userId,
       content: response.reply,
@@ -1989,6 +2006,8 @@ bot.on('message:text', async (ctx) => {
     await logEvent('message.failed', {
       userId: ctx?.from?.id,
       chatId: ctx?.chat?.id,
+      stage: failureStage,
+      textPreview: normalizedTextForLog.slice(0, 280),
       error: String(error),
       durationMs: Date.now() - startedAt,
     }, 'error');

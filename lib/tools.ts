@@ -28,20 +28,107 @@ function cleanExpression(input: string) {
     .trim();
 }
 
+function normalizeMathPrompt(input: string) {
+  return input
+    .replace(/\s+/g, ' ')
+    .replace(/[{}]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function detectNamedIntegral(text: string) {
+  const normalized = normalizeMathPrompt(text);
+  if (!normalized.includes('int')) {
+    return null;
+  }
+
+  const gaussianZeroToInfinity =
+    /int_0\^\\?infty\s*e\^\s*\(?-x\^2\)?\s*d\s*x/.test(normalized) ||
+    /int_0\^∞\s*e\^\s*\(?-x\^2\)?\s*d\s*x/.test(normalized) ||
+    /int_0\^infty\s*e\^\s*\(?-x\^2\)?\s*d\s*x/.test(normalized);
+
+  if (gaussianZeroToInfinity) {
+    return {
+      expression: '\\int_0^\\infty e^{-x^2}\\,dx',
+      resultLatex: '\\frac{\\sqrt{\\pi}}{2}',
+      explanation:
+        '<b>Integral Gaussian setengah garis:</b>\n\n' +
+        '$$\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$\n\n' +
+        'Ini adalah hasil baku dari integral Gaussian.',
+    };
+  }
+
+  const gaussianFullLine =
+    /int_-?\\?infty\^\\?infty\s*e\^\s*\(?-x\^2\)?\s*d\s*x/.test(normalized) ||
+    /int_-?∞\^∞\s*e\^\s*\(?-x\^2\)?\s*d\s*x/.test(normalized) ||
+    /int_-?infty\^infty\s*e\^\s*\(?-x\^2\)?\s*d\s*x/.test(normalized);
+
+  if (gaussianFullLine) {
+    return {
+      expression: '\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx',
+      resultLatex: '\\sqrt{\\pi}',
+      explanation:
+        '<b>Integral Gaussian penuh:</b>\n\n' +
+        '$$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}$$\n\n' +
+        'Ini adalah hasil baku dari integral Gaussian pada seluruh garis real.',
+    };
+  }
+
+  return null;
+}
+
 function tryMathTool(text: string): ToolResult {
   const lower = text.toLowerCase();
+  const mentionsHigherMath =
+    lower.includes('integral') ||
+    lower.includes('turunan') ||
+    lower.includes('limit') ||
+    lower.includes('matriks');
   const asksCalculation =
     lower.includes('hitung') ||
     lower.includes('berapa hasil') ||
     lower.includes('kalkulasi') ||
     /[0-9]\s*[-+*/x÷][\s0-9(]/i.test(text);
 
-  if (!asksCalculation) {
+  if (!asksCalculation && !mentionsHigherMath) {
     return { handled: false };
+  }
+
+  const namedIntegral = detectNamedIntegral(text);
+  if (namedIntegral) {
+    return {
+      handled: true,
+      toolName: 'math',
+      response:
+        `${namedIntegral.explanation}\n` +
+        `<b>Jawaban akhir:</b> $$${namedIntegral.resultLatex}$$`,
+      metadata: {
+        expression: namedIntegral.expression,
+        result: namedIntegral.resultLatex,
+        symbolic: true,
+      },
+    };
   }
 
   const expression = cleanExpression(text);
   if (!expression || !/[0-9]/.test(expression)) {
+    if (mentionsHigherMath) {
+      return {
+        handled: true,
+        toolName: 'math',
+        response:
+          '<b>Mode matematika aktif.</b>\n\n' +
+          'Saya bisa bantu hitung ekspresi aritmetika langsung, dan untuk integral tertentu yang umum saya bisa kenali.\n\n' +
+          'Kirim bentuk soalnya secara lengkap, misalnya:\n' +
+          '- $$\\int_0^\\infty e^{-x^2}\\,dx$$\n' +
+          '- $$\\lim_{x \\to 0} \\frac{\\sin x}{x}$$\n' +
+          '- $$f\'(x)$$ untuk fungsi tertentu',
+        metadata: {
+          symbolic: true,
+          fallbackHint: 'higher_math_prompt',
+        },
+      };
+    }
     return { handled: false };
   }
 

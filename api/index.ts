@@ -3891,6 +3891,24 @@ app.post('/api/chat', async (c) => {
   });
 });
 
+app.post('/api/integration/chat', async (c) => {
+  const body = await c.req.json<{
+    message?: string;
+    history?: any[];
+  }>().catch(() => null);
+
+  if (!body || !body.message) {
+    return c.json({ error: 'Invalid input' }, 400);
+  }
+
+  const result = await handleWebChat({
+    message: body.message,
+    history: body.history,
+  });
+
+  return c.json(result);
+});
+
 app.get('/admin/insights', async (c) => {
   const access = await requireAdminApiAccess(c);
   if (!access.ok) {

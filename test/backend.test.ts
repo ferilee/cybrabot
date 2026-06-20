@@ -371,6 +371,8 @@ describe('backend utilities', () => {
     });
 
     expect(runLocalTool('Tolong hitung 12 / 3', config).toolName).toBe('math');
+    expect(runLocalTool('Hitung integral ini: $$\\int_0^\\infty e^{-x^2} dx$$', config).response).toContain('\\frac{\\sqrt{\\pi}}{2}');
+    expect(runLocalTool('Kamu bisa menghitung integral?', config).response).toContain('Mode matematika aktif');
     expect(runLocalTool('Bikin caption sekolah untuk lomba coding', config).toolName).toBe('caption');
     expect(runLocalTool('Buatkan pengumuman rapat wali murid', config).toolName).toBe('announcement');
     expect(runLocalTool('Apa itu MGMP?', config).toolName).toBe('faq');

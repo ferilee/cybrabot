@@ -86,6 +86,10 @@ Setelah dijalankan, Anda dapat mengakses:
 - **Web Chat Message:** `POST /api/chat`
 - **Agent Reach Status:** `GET /api/agent-reach/status`
 
+Dokumen operasional tambahan:
+- [Checklist Tuning CybraFeriBot](/home/ferilee/DEV/cybraferibot/docs/checklist-tuning-cybra.md)
+- [Template Hasil Tuning CybraFeriBot](/home/ferilee/DEV/cybraferibot/docs/template-hasil-tuning-cybra.md)
+
 ## 🧩 Web Chat Berbasis Skill
 CybraFeriBot sekarang menyediakan UI web chat di `/chat`.
 
