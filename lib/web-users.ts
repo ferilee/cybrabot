@@ -1,6 +1,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { db } from '../db';
 import { webChatLogs, webUsers } from '../db/schema';
+import { recommendKnowledgeDocuments } from './grill-recommendations';
 import { listPersistedGrillHistoryByEmail } from './grill-session-store';
 import type { WebSession } from './web-auth';
 
@@ -12,6 +13,55 @@ function parseQuestionReviews(raw: string | null | undefined) {
   } catch {
     return [];
   }
+}
+
+function summarizeDominantWeaknesses(grillHistory: Array<{
+  focusHint?: string | null;
+  questionReviews?: Array<{
+    focusArea?: string | null;
+    rubric?: { conceptAccuracy?: number; processAccuracy?: number; explanationClarity?: number };
+  }>;
+}>) {
+  const focusCounts = new Map<string, number>();
+  let conceptPenalty = 0;
+  let processPenalty = 0;
+  let clarityPenalty = 0;
+
+  for (const session of grillHistory) {
+    if (session.focusHint) {
+      focusCounts.set(session.focusHint, (focusCounts.get(session.focusHint) || 0) + 1);
+    }
+    for (const review of session.questionReviews || []) {
+      if (review.focusArea) {
+        focusCounts.set(review.focusArea, (focusCounts.get(review.focusArea) || 0) + 1);
+      }
+      conceptPenalty += 2 - Number(review.rubric?.conceptAccuracy ?? 0);
+      processPenalty += 2 - Number(review.rubric?.processAccuracy ?? 0);
+      clarityPenalty += 1 - Number(review.rubric?.explanationClarity ?? 0);
+    }
+  }
+
+  const dominantFocusLabels = [...focusCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([focus]) => {
+      if (focus === 'DASAR') return 'konsep dasar';
+      if (focus === 'APLIKASI') return 'penerapan konsep';
+      if (focus === 'ANALISIS') return 'analisis/pembuktian';
+      if (focus === 'KETELITIAN') return 'ketelitian langkah';
+      return focus.toLowerCase();
+    });
+
+  const weakestDimension = [
+    { id: 'konsep', value: conceptPenalty },
+    { id: 'langkah', value: processPenalty },
+    { id: 'kejelasan', value: clarityPenalty },
+  ].sort((a, b) => b.value - a.value)[0];
+
+  return {
+    dominantFocusLabels,
+    weakestDimension: weakestDimension?.value > 0 ? weakestDimension.id : null,
+  };
 }
 
 export const WEB_CHAT_QUOTA_LIMIT = 5;
@@ -368,6 +418,33 @@ export async function getManagedWebUserLogs(email: string, limit = 40) {
     limit,
   });
   const grillHistory = await listPersistedGrillHistoryByEmail(normalizedEmail, 12);
+  const parsedGrillHistory = grillHistory.map((item) => ({
+    id: item.id,
+    topic: item.topic,
+    totalQuestions: item.totalQuestions,
+    answeredCount: item.answeredCount,
+    correctCount: item.correctCount,
+    partialCount: item.partialCount,
+    timerSeconds: item.timerSeconds,
+    hardMode: Boolean(item.hardMode),
+    difficultyLevel: item.difficultyLevel,
+    focusHint: item.focusHint,
+    endedReason: item.endedReason,
+    finalReview: item.finalReview,
+    questionReviews: parseQuestionReviews(item.questionReviews),
+    createdAt: item.createdAt?.toISOString?.() || null,
+    completedAt: item.completedAt?.toISOString?.() || null,
+  }));
+  const weaknessSummary = summarizeDominantWeaknesses(parsedGrillHistory);
+  const latestGrillTopic = parsedGrillHistory[0]?.topic || 'Matematika';
+  const recommendedKnowledgeDocs = parsedGrillHistory.length
+    ? recommendKnowledgeDocuments({
+        topic: latestGrillTopic,
+        focusHint: ((parsedGrillHistory[0]?.focusHint as 'DASAR' | 'APLIKASI' | 'ANALISIS' | 'KETELITIAN' | null) || 'DASAR'),
+        weakestDimension: weaknessSummary.weakestDimension,
+        limit: 2,
+      })
+    : [];
 
   const totalUserMessages = logs.filter((item) => item.role === 'user').length;
   const totalAssistantMessages = logs.filter((item) => item.role === 'assistant').length;
@@ -388,22 +465,11 @@ export async function getManagedWebUserLogs(email: string, limit = 40) {
       totalUserMessages,
       totalAssistantMessages,
       totalGrillSessions: grillHistory.length,
+      dominantWeaknesses: weaknessSummary.dominantFocusLabels,
+      weakestDimension: weaknessSummary.weakestDimension,
+      recommendedKnowledgeDocs,
     },
-    grillHistory: grillHistory.map((item) => ({
-      id: item.id,
-      topic: item.topic,
-      totalQuestions: item.totalQuestions,
-      answeredCount: item.answeredCount,
-      correctCount: item.correctCount,
-      partialCount: item.partialCount,
-      timerSeconds: item.timerSeconds,
-      hardMode: Boolean(item.hardMode),
-      endedReason: item.endedReason,
-      finalReview: item.finalReview,
-      questionReviews: parseQuestionReviews(item.questionReviews),
-      createdAt: item.createdAt?.toISOString?.() || null,
-      completedAt: item.completedAt?.toISOString?.() || null,
-    })),
+    grillHistory: parsedGrillHistory,
     logs: logs
       .slice()
       .reverse()

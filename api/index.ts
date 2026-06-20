@@ -1518,6 +1518,28 @@ function renderAdminPage(session: WebSession) {
                   <div><strong>\${user.totalAssistantMessages ?? 0}</strong><span>Jawaban Cybra</span></div>
                   <div><strong>\${user.totalGrillSessions ?? 0}</strong><span>Sesi grill selesai</span></div>
                 </div>
+                \${Array.isArray(user.dominantWeaknesses) && user.dominantWeaknesses.length ? \`
+                  <div class="item" style="margin-top:1rem;">
+                    <strong style="display:block;margin-bottom:0.7rem;">Pola Kelemahan Dominan</strong>
+                    <div class="badge-row" style="margin-bottom:0.7rem;">
+                      \${user.dominantWeaknesses.map((item) => '<span class="badge">' + escapeHtml(item) + '</span>').join('')}
+                    </div>
+                    <div class="hint">Dimensi paling lemah: \${escapeHtml(user.weakestDimension || '-')}</div>
+                    \${Array.isArray(user.recommendedKnowledgeDocs) && user.recommendedKnowledgeDocs.length ? \`
+                      <div style="margin-top:0.9rem;">
+                        <strong style="display:block;margin-bottom:0.5rem;">Knowledge yang Disarankan</strong>
+                        <div class="list dense-list">
+                          \${user.recommendedKnowledgeDocs.map((doc) => \`
+                            <div class="item">
+                              <strong>\${escapeHtml(doc.title || '-')}</strong>
+                              <div class="hint" style="margin-top:0.35rem;">\${escapeHtml(doc.reason || '-')}</div>
+                            </div>
+                          \`).join('')}
+                        </div>
+                      </div>
+                    \` : ''}
+                  </div>
+                \` : ''}
               </div>
               \${grillHistory.length ? \`
                 <div class="item" style="margin-top:1rem;">
@@ -1561,7 +1583,16 @@ function renderAdminPage(session: WebSession) {
                                   <div class="item">
                                     <div class="row" style="justify-content:space-between;align-items:flex-start;gap:0.75rem;">
                                       <strong>Soal \${escapeHtml(String(review.questionNumber || '-'))}</strong>
-                                      <span class="badge">\${escapeHtml(String(review.scoreMark || '-').toLowerCase())}</span>
+                                      <div class="badge-row">
+                                        <span class="badge">\${escapeHtml(String(review.scoreMark || '-').toLowerCase())}</span>
+                                        <span class="badge">\${escapeHtml(String(review.difficultyLevel === 1 ? 'dasar' : review.difficultyLevel === 2 ? 'aplikasi' : 'analitis'))}</span>
+                                      </div>
+                                    </div>
+                                    <div class="mini-stat" style="margin-top:0.6rem;">
+                                      <div><strong>\${escapeHtml(String(review.rubric?.conceptAccuracy ?? 0))}/2</strong><span>Akurasi konsep</span></div>
+                                      <div><strong>\${escapeHtml(String(review.rubric?.processAccuracy ?? 0))}/2</strong><span>Ketelitian langkah</span></div>
+                                      <div><strong>\${escapeHtml(String(review.rubric?.explanationClarity ?? 0))}/1</strong><span>Kejelasan</span></div>
+                                      <div><strong>\${escapeHtml(String(review.focusArea || '-').toLowerCase())}</strong><span>Fokus</span></div>
                                     </div>
                                     <div class="hint" style="margin-top:0.5rem;">Pertanyaan</div>
                                     <div style="white-space:pre-wrap;overflow-wrap:anywhere;">\${escapeHtml(review.questionText || '-')}</div>

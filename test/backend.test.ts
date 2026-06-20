@@ -417,9 +417,15 @@ describe('backend utilities', () => {
     expect(skills.length).toBeGreaterThan(0);
     expect(getWebSkill('grill-me')?.title).toBe('Grill Me');
     expect(getWebSkill('penjelasan-humanis')?.title).toBe('Penjelasan Humanis');
+    expect(getWebSkill('teach')?.title).toBe('Teach');
+    expect(getWebSkill('diagnosing-bugs')?.title).toBe('Diagnosing Bugs');
+    expect(getWebSkill('test-driven-development')?.title).toBe('Test-Driven Development');
     expect(selectWebSkill('tolong bantu deploy docker', undefined, 'technical')?.id).toBe('technical-helper');
     expect(selectWebSkill('uji saya untuk interview backend')?.id).toBe('grill-me');
     expect(selectWebSkill('jelaskan MCP dengan bahasa awam dan kasih analogi')?.id).toBe('penjelasan-humanis');
+    expect(selectWebSkill('ajari saya trigonometri dari dasar')?.id).toBe('teach');
+    expect(selectWebSkill('debug ini, aplikasi tidak jalan setelah deploy')?.id).toBe('diagnosing-bugs');
+    expect(selectWebSkill('mulai dari test dulu dengan tdd')?.id).toBe('test-driven-development');
     expect(getWebChatSkills().map((item) => item.id)).toContain('general-chat');
   });
 });
@@ -546,7 +552,7 @@ describe('skill and web chat routing', () => {
 
         if (input.message.startsWith('Evaluasi jawaban user untuk soal 1')) {
           return {
-            text: '## Evaluasi Jawaban\nJawabanmu sudah mengarah benar.\nJika sudah siap, tekan tombol "Lanjut ke Soal Berikutnya" atau ketik lanjut.\nSkor Soal: BENAR',
+            text: '## Evaluasi Jawaban\nJawabanmu sudah mengarah benar.\nJika sudah siap, tekan tombol "Lanjut ke Soal Berikutnya" atau ketik lanjut.\nAkurasi Konsep: 2/2\nKetelitian Langkah: 2/2\nKejelasan Penjelasan: 1/1\nFokus Berikutnya: ANALISIS\nSkor Soal: BENAR',
             model: 'chat-mock',
             latencyMs: 6,
             knowledgeMatches: [],
@@ -605,10 +611,13 @@ describe('skill and web chat routing', () => {
       sessionKey,
     });
     expect(evaluation.reply).toContain('## Evaluasi Jawaban');
+    expect(evaluation.reply).toContain('## Rubrik Penilaian');
+    expect(evaluation.reply).toContain('Akurasi konsep: 2/2');
     expect(evaluation.reply).toContain('Lanjut ke Soal Berikutnya');
     expect(evaluation.reply).not.toContain('## Soal 2 dari 2');
     expect(evaluation.reply).toContain('## Progres Sesi');
     expect(evaluation.reply).toContain('Skor sementara: 1/1');
+    expect(evaluation.reply).toContain('Level saat ini: aplikasi');
     expect(evaluation.reply).not.toContain('Skor Soal: BENAR');
 
     const secondQuestion = await runSkillChat({
@@ -623,6 +632,71 @@ describe('skill and web chat routing', () => {
     const activeSession = await persisted.getPersistedGrillSession(sessionKey);
     expect(activeSession?.currentQuestion).toBe(2);
     expect(activeSession?.correctCount).toBe(1);
+    expect(activeSession?.difficultyLevel).toBe(2);
+    expect(activeSession?.focusHint).toBe('ANALISIS');
+  });
+
+  test('grill-me question generation injects topic blueprint and adaptive focus', async () => {
+    const aiUrl = join(process.cwd(), 'lib/ai.ts');
+    let capturedQuestionContext = '';
+
+    mock.module(aiUrl, () => ({
+      getIntent: async () => ({ intent: 'casual', model: 'intent-mock', latencyMs: 1, fallback: false }),
+      generateSkillResponse: async (input: { message: string; externalContext?: string }) => {
+        if (input.message.startsWith('Susun bahan bacaan ringkas')) {
+          return {
+            text: '- Sin, cos, tan',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        if (input.message.startsWith('Buat soal 1 dari 3')) {
+          capturedQuestionContext = input.externalContext || '';
+          return {
+            text: '## Soal 1 dari 3\nTentukan nilai cos 60 derajat.',
+            model: 'chat-mock',
+            latencyMs: 6,
+            knowledgeMatches: [],
+            historyCount: 0,
+            fallback: false,
+          };
+        }
+
+        return {
+          text: 'fallback mock',
+          model: 'chat-mock',
+          latencyMs: 6,
+          knowledgeMatches: [],
+          historyCount: 0,
+          fallback: false,
+        };
+      },
+    }));
+
+    const { runSkillChat } = await importFresh<typeof import('../lib/skill-chat')>('lib/skill-chat.ts');
+    const adminConfig = await getAdminConfig();
+    const sessionKey = 'grill-blueprint@example.com';
+
+    await runSkillChat({
+      message: 'uji saya tentang trigonometri 3 soal',
+      adminConfig,
+      requestedSkillId: 'grill-me',
+      sessionKey,
+    });
+    await runSkillChat({
+      message: 'siap',
+      adminConfig,
+      sessionKey,
+    });
+
+    expect(capturedQuestionContext).toContain('Blueprint topik: trigonometri.');
+    expect(capturedQuestionContext).toContain('nilai sudut istimewa');
+    expect(capturedQuestionContext).toContain('Target level soal: dasar.');
+    expect(capturedQuestionContext).toContain('Fokus area: penguatan konsep dasar.');
   });
 
   test('grill-me session can be ended explicitly and clears persisted state', async () => {
@@ -675,6 +749,7 @@ describe('skill and web chat routing', () => {
 
     expect(ended.reply).toContain('Sesi latihan diakhiri.');
     expect(ended.reply).toContain('## Ringkasan Akhir');
+    expect(ended.reply).toContain('## Remedial Otomatis');
     expect(await getPersistedGrillSession(sessionKey)).toBeUndefined();
     const history = await listPersistedGrillHistoryByEmail(sessionKey);
     expect(history).toHaveLength(1);
@@ -685,6 +760,17 @@ describe('skill and web chat routing', () => {
 
   test('completed grill-me session is archived for the user', async () => {
     const aiUrl = join(process.cwd(), 'lib/ai.ts');
+
+    saveKnowledgeDocument({
+      id: 'matematika-statistika-dan-peluang',
+      title: 'Statistika dan Peluang Dasar',
+      content: 'Materi peluang dasar untuk latihan remedial.',
+    });
+    saveKnowledgeDocument({
+      id: 'teaching-assistant',
+      title: 'Asisten Guru dan Sekolah',
+      content: 'Panduan umum langkah belajar sederhana.',
+    });
 
     mock.module(aiUrl, () => ({
       getIntent: async () => ({ intent: 'casual', model: 'intent-mock', latencyMs: 1, fallback: false }),
@@ -713,7 +799,7 @@ describe('skill and web chat routing', () => {
 
         if (input.message.startsWith('Evaluasi jawaban user untuk soal 1')) {
           return {
-            text: '## Evaluasi Jawaban\nJawabanmu tepat.\nSesi selesai.\nSkor Soal: BENAR',
+            text: '## Evaluasi Jawaban\nJawabanmu tepat.\nSesi selesai.\nAkurasi Konsep: 2/2\nKetelitian Langkah: 2/2\nKejelasan Penjelasan: 1/1\nFokus Berikutnya: ANALISIS\nSkor Soal: BENAR',
             model: 'chat-mock',
             latencyMs: 6,
             knowledgeMatches: [],
@@ -755,15 +841,94 @@ describe('skill and web chat routing', () => {
     });
 
     expect(done.reply).toContain('Sesi latihan sudah selesai.');
+    expect(done.reply).toContain('## Remedial Otomatis');
+    expect(done.reply).toContain('### Bacaan yang Disarankan');
+    expect(done.reply).toContain('Statistika dan Peluang Dasar');
     const history = await listPersistedGrillHistoryByEmail(sessionKey);
     expect(history).toHaveLength(1);
     expect(history[0]?.topic).toBe('Peluang');
     expect(history[0]?.endedReason).toBe('completed');
     expect(history[0]?.correctCount).toBe(1);
     expect(history[0]?.finalReview).toContain('## Evaluasi Jawaban');
+    expect(history[0]?.finalReview).toContain('## Rubrik Penilaian');
     expect(history[0]?.finalReview).toContain('## Ringkasan Akhir');
+    expect(history[0]?.finalReview).toContain('## Remedial Otomatis');
     expect(history[0]?.questionReviews).toContain('questionNumber');
+    expect(history[0]?.questionReviews).toContain('focusArea');
     expect(history[0]?.questionReviews).toContain('Jawabanmu tepat.');
+  });
+
+  test('managed web user logs summarize dominant grill weaknesses', async () => {
+    saveKnowledgeDocument({
+      id: 'matematika-trigonometri',
+      title: 'Trigonometri Dasar SMA SMK',
+      content: 'Materi trigonometri untuk remedial konsep dan ketelitian.',
+    });
+    saveKnowledgeDocument({
+      id: 'teaching-assistant',
+      title: 'Asisten Guru dan Sekolah',
+      content: 'Panduan umum langkah belajar sederhana.',
+    });
+
+    await seedWebUserForTest({ email: 'weakness@example.com', profileCompleted: true, fullName: 'Weak Ness' });
+    await saveWebUserProfile({
+      email: 'weakness@example.com',
+      fullName: 'Weak Ness',
+      provinceId: '31',
+      provinceName: 'DKI JAKARTA',
+      regencyId: '3171',
+      regencyName: 'KOTA ADM. JAKARTA PUSAT',
+      districtId: '3171010',
+      districtName: 'MENTENG',
+      villageId: '3171010001',
+      villageName: 'MENTENG',
+    });
+
+    const { archivePersistedGrillSession } = await importFresh<typeof import('../lib/grill-session-store')>('lib/grill-session-store.ts');
+    await archivePersistedGrillSession({
+      sessionKey: 'weakness@example.com',
+      email: 'weakness@example.com',
+      topic: 'Trigonometri',
+      totalQuestions: 2,
+      answeredCount: 2,
+      correctCount: 0,
+      partialCount: 1,
+      timerSeconds: 60,
+      hardMode: false,
+      difficultyLevel: 1,
+      focusHint: 'KETELITIAN',
+      endedReason: 'completed',
+      finalReview: 'Ringkasan',
+      questionReviews: JSON.stringify([
+        {
+          questionNumber: 1,
+          questionText: 'Q1',
+          userAnswer: 'A1',
+          evaluation: 'E1',
+          scoreMark: 'SEBAGIAN',
+          difficultyLevel: 1,
+          focusArea: 'KETELITIAN',
+          rubric: { conceptAccuracy: 1, processAccuracy: 0, explanationClarity: 1 },
+        },
+        {
+          questionNumber: 2,
+          questionText: 'Q2',
+          userAnswer: 'A2',
+          evaluation: 'E2',
+          scoreMark: 'SALAH',
+          difficultyLevel: 1,
+          focusArea: 'KETELITIAN',
+          rubric: { conceptAccuracy: 1, processAccuracy: 0, explanationClarity: 0 },
+        },
+      ]),
+    });
+
+    const { getManagedWebUserLogs } = await importFresh<typeof import('../lib/web-users')>('lib/web-users.ts');
+    const result = await getManagedWebUserLogs('weakness@example.com');
+    expect(result?.user.totalGrillSessions).toBe(1);
+    expect(result?.user.dominantWeaknesses).toContain('ketelitian langkah');
+    expect(result?.user.weakestDimension).toBe('langkah');
+    expect(result?.user.recommendedKnowledgeDocs?.[0]?.title).toBe('Trigonometri Dasar SMA SMK');
   });
 
   test('handleWebChat validates empty input and uses local tool route', async () => {

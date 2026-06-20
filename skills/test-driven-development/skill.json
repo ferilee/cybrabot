@@ -1,0 +1,15 @@
+{
+  "id": "test-driven-development",
+  "title": "Test-Driven Development",
+  "description": "Memandu implementasi fitur atau perbaikan bug dengan alur red-green-refactor dan fokus pada perilaku publik.",
+  "triggers": [
+    "tdd",
+    "test-driven",
+    "red green refactor",
+    "tulis test dulu",
+    "buat integration test",
+    "test first",
+    "mulai dari test"
+  ],
+  "modelHint": "chat"
+}

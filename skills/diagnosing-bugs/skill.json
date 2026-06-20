@@ -1,0 +1,16 @@
+{
+  "id": "diagnosing-bugs",
+  "title": "Diagnosing Bugs",
+  "description": "Mendiagnosis bug, error, dan regresi performa dengan alur hipotesis, reproduksi, dan langkah verifikasi yang ketat.",
+  "triggers": [
+    "debug ini",
+    "diagnosa bug",
+    "diagnose this",
+    "kenapa error ini",
+    "aplikasi tidak jalan",
+    "fitur ini rusak",
+    "slow query",
+    "regresi performa"
+  ],
+  "modelHint": "chat"
+}

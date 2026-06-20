@@ -1,0 +1,16 @@
+{
+  "id": "teach",
+  "title": "Teach",
+  "description": "Mengajar konsep atau keterampilan baru secara bertahap, fokus pada pemahaman, latihan, dan retensi.",
+  "triggers": [
+    "ajari saya",
+    "ajarkan saya",
+    "tolong ajari",
+    "saya mau belajar",
+    "bantu saya belajar",
+    "teach me",
+    "how do i learn",
+    "saya ingin memahami"
+  ],
+  "modelHint": "chat"
+}

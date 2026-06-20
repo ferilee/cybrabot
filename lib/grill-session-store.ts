@@ -29,6 +29,8 @@ export async function savePersistedGrillSession(input: PersistedGrillSessionInpu
       currentQuestionText: input.currentQuestionText ?? null,
       phase: input.phase,
       hardMode: Boolean(input.hardMode),
+      difficultyLevel: input.difficultyLevel,
+      focusHint: input.focusHint ?? null,
       answeredCount: input.answeredCount,
       correctCount: input.correctCount,
       partialCount: input.partialCount,
@@ -52,6 +54,8 @@ export async function archivePersistedGrillSession(input: {
   partialCount: number;
   timerSeconds: number | null;
   hardMode: boolean;
+  difficultyLevel: number;
+  focusHint?: string | null;
   endedReason: 'completed' | 'ended_by_user';
   finalReview?: string | null;
   questionReviews?: string | null;
@@ -67,6 +71,8 @@ export async function archivePersistedGrillSession(input: {
     partialCount: input.partialCount,
     timerSeconds: input.timerSeconds,
     hardMode: input.hardMode,
+    difficultyLevel: input.difficultyLevel,
+    focusHint: input.focusHint ?? null,
     endedReason: input.endedReason,
     finalReview: input.finalReview || null,
     questionReviews: input.questionReviews || null,

@@ -101,6 +101,8 @@ sqlite.exec(`
     current_question_text TEXT,
     phase TEXT NOT NULL DEFAULT 'awaiting_ready',
     hard_mode INTEGER NOT NULL DEFAULT 0,
+    difficulty_level INTEGER NOT NULL DEFAULT 1,
+    focus_hint TEXT,
     answered_count INTEGER NOT NULL DEFAULT 0,
     correct_count INTEGER NOT NULL DEFAULT 0,
     partial_count INTEGER NOT NULL DEFAULT 0,
@@ -120,6 +122,8 @@ sqlite.exec(`
     partial_count INTEGER NOT NULL DEFAULT 0,
     timer_seconds INTEGER,
     hard_mode INTEGER NOT NULL DEFAULT 0,
+    difficulty_level INTEGER NOT NULL DEFAULT 1,
+    focus_hint TEXT,
     ended_reason TEXT NOT NULL DEFAULT 'completed',
     final_review TEXT,
     question_reviews TEXT,
@@ -180,6 +184,8 @@ ensureColumn('web_chat_logs', 'model', 'model TEXT');
 ensureColumn('web_grill_sessions', 'current_question_text', 'current_question_text TEXT');
 ensureColumn('web_grill_sessions', 'phase', "phase TEXT NOT NULL DEFAULT 'awaiting_ready'");
 ensureColumn('web_grill_sessions', 'hard_mode', 'hard_mode INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_sessions', 'difficulty_level', 'difficulty_level INTEGER NOT NULL DEFAULT 1');
+ensureColumn('web_grill_sessions', 'focus_hint', 'focus_hint TEXT');
 ensureColumn('web_grill_sessions', 'answered_count', 'answered_count INTEGER NOT NULL DEFAULT 0');
 ensureColumn('web_grill_sessions', 'correct_count', 'correct_count INTEGER NOT NULL DEFAULT 0');
 ensureColumn('web_grill_sessions', 'partial_count', 'partial_count INTEGER NOT NULL DEFAULT 0');
@@ -192,6 +198,8 @@ ensureColumn('web_grill_session_history', 'correct_count', 'correct_count INTEGE
 ensureColumn('web_grill_session_history', 'partial_count', 'partial_count INTEGER NOT NULL DEFAULT 0');
 ensureColumn('web_grill_session_history', 'timer_seconds', 'timer_seconds INTEGER');
 ensureColumn('web_grill_session_history', 'hard_mode', 'hard_mode INTEGER NOT NULL DEFAULT 0');
+ensureColumn('web_grill_session_history', 'difficulty_level', 'difficulty_level INTEGER NOT NULL DEFAULT 1');
+ensureColumn('web_grill_session_history', 'focus_hint', 'focus_hint TEXT');
 ensureColumn('web_grill_session_history', 'ended_reason', "ended_reason TEXT NOT NULL DEFAULT 'completed'");
 ensureColumn('web_grill_session_history', 'final_review', 'final_review TEXT');
 ensureColumn('web_grill_session_history', 'question_reviews', 'question_reviews TEXT');

@@ -7,16 +7,26 @@ import {
   getPersistedGrillSession,
   savePersistedGrillSession,
 } from './grill-session-store';
+import { recommendKnowledgeDocuments } from './grill-recommendations';
 import { retrieveKnowledge } from './knowledge';
 
 type GrillPhase = 'awaiting_ready' | 'awaiting_answer' | 'awaiting_continue' | 'completed';
 type ScoreMark = 'BENAR' | 'SEBAGIAN' | 'SALAH';
+type FocusArea = 'DASAR' | 'APLIKASI' | 'ANALISIS' | 'KETELITIAN';
+type RubricScores = {
+  conceptAccuracy: 0 | 1 | 2;
+  processAccuracy: 0 | 1 | 2;
+  explanationClarity: 0 | 1;
+};
 type QuestionReview = {
   questionNumber: number;
   questionText: string;
   userAnswer: string;
   evaluation: string;
   scoreMark: ScoreMark;
+  difficultyLevel: number;
+  focusArea: FocusArea;
+  rubric: RubricScores;
 };
 
 type GrillSession = {
@@ -28,6 +38,8 @@ type GrillSession = {
   currentQuestionText: string | null;
   phase: GrillPhase;
   hardMode: boolean;
+  difficultyLevel: number;
+  focusHint: FocusArea;
   answeredCount: number;
   correctCount: number;
   partialCount: number;
@@ -39,6 +51,68 @@ const CONTINUE_RE = /\b(lanjut|next|soal berikutnya|lanjutkan)\b/i;
 const END_RE = /\b(akhiri sesi|selesai sesi|sudahi sesi|stop sesi|berhenti sesi|end session|akhiri latihan)\b/i;
 const NEW_SESSION_RE = /\b(uji saya|tes saya|grill me|interview saya|latihan interview|kritisi jawaban saya)\b/i;
 const SCORE_RE = /^Skor Soal:\s*(BENAR|SEBAGIAN|SALAH)\s*$/im;
+const CONCEPT_RE = /^Akurasi Konsep:\s*([0-2])\/2\s*$/im;
+const PROCESS_RE = /^Ketelitian Langkah:\s*([0-2])\/2\s*$/im;
+const CLARITY_RE = /^Kejelasan Penjelasan:\s*([0-1])\/1\s*$/im;
+const FOCUS_RE = /^Fokus Berikutnya:\s*(DASAR|APLIKASI|ANALISIS|KETELITIAN)\s*$/im;
+
+function inferTopicBlueprint(topic: string) {
+  const normalized = topic.toLowerCase();
+
+  if (normalized.includes('trigonometri')) {
+    return [
+      'Blueprint topik: trigonometri.',
+      'Prioritaskan progres soal: nilai sudut istimewa -> identitas dasar -> aplikasi segitiga/kuadran -> pembuktian identitas.',
+      'Jebakan utama: salah sisi terhadap sudut acuan, salah tanda kuadran, salah memilih identitas.',
+    ].join('\n');
+  }
+
+  if (normalized.includes('limit') || normalized.includes('turunan')) {
+    return [
+      'Blueprint topik: limit dan turunan.',
+      'Prioritaskan progres soal: substitusi/pemfaktoran limit -> turunan dasar -> aturan rantai/hasil kali/hasil bagi -> aplikasi gradien/optimasi.',
+      'Jebakan utama: bentuk tak tentu tidak disederhanakan, lupa aturan rantai, salah menyimpulkan titik stasioner.',
+    ].join('\n');
+  }
+
+  if (normalized.includes('integral')) {
+    return [
+      'Blueprint topik: integral.',
+      'Prioritaskan progres soal: integral dasar -> substitusi sederhana -> integral tentu dan interpretasi luas.',
+      'Jebakan utama: lupa konstanta integrasi, salah menaikkan pangkat, salah evaluasi batas integral tentu.',
+    ].join('\n');
+  }
+
+  if (normalized.includes('peluang') || normalized.includes('statistika')) {
+    return [
+      'Blueprint topik: statistika dan peluang.',
+      'Prioritaskan progres soal: ruang sampel/mean-median-modus -> peluang dasar dan komplemen -> irisan/gabungan -> kombinatorik sederhana.',
+      'Jebakan utama: median tanpa urut data, salah membedakan kombinasi vs permutasi, salah mengurangi irisan kejadian.',
+    ].join('\n');
+  }
+
+  if (normalized.includes('barisan') || normalized.includes('deret')) {
+    return [
+      'Blueprint topik: barisan dan deret.',
+      'Prioritaskan progres soal: beda/rasio -> suku ke-n -> jumlah n suku -> aplikasi pola numerik.',
+      'Jebakan utama: tertukar rumus aritmetika dan geometri, salah membaca indeks suku.',
+    ].join('\n');
+  }
+
+  if (normalized.includes('aljabar') || normalized.includes('fungsi')) {
+    return [
+      'Blueprint topik: aljabar dan fungsi.',
+      'Prioritaskan progres soal: operasi bentuk aljabar -> pemfaktoran -> persamaan/fungsi -> interpretasi grafik dasar.',
+      'Jebakan utama: salah tanda, salah distribusi, salah domain fungsi.',
+    ].join('\n');
+  }
+
+  return [
+    'Blueprint topik: umum.',
+    'Gunakan progres dari konsep dasar -> aplikasi -> analisis.',
+    'Jaga agar tiap soal menargetkan satu miskonsepsi utama.',
+  ].join('\n');
+}
 
 function normalizeKey(key: string) {
   return key.trim().toLowerCase();
@@ -72,6 +146,25 @@ function formatConfigLine(session: GrillSession) {
   return `Konfigurasi: ${session.totalQuestions} soal | ⏱ ${formatTimerOption(session.timerSeconds)} | Materi: ${session.topic}`;
 }
 
+function formatDifficultyLabel(level: number) {
+  if (level <= 1) return 'dasar';
+  if (level === 2) return 'aplikasi';
+  return 'analitis';
+}
+
+function formatFocusHint(focus: FocusArea) {
+  switch (focus) {
+    case 'DASAR':
+      return 'penguatan konsep dasar';
+    case 'APLIKASI':
+      return 'penerapan konsep ke kasus';
+    case 'ANALISIS':
+      return 'penalaran analitis dan pembuktian';
+    case 'KETELITIAN':
+      return 'ketelitian langkah dan perhitungan';
+  }
+}
+
 function formatScoreValue(session: GrillSession) {
   const value = session.correctCount + (session.partialCount * 0.5);
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -84,6 +177,8 @@ function formatProgressBlock(session: GrillSession) {
     `- Skor sementara: ${formatScoreValue(session)}/${session.answeredCount || 0}`,
     `- Jawaban penuh benar: ${session.correctCount}`,
     `- Jawaban sebagian benar: ${session.partialCount}`,
+    `- Level saat ini: ${formatDifficultyLabel(session.difficultyLevel)}`,
+    `- Fokus berikutnya: ${formatFocusHint(session.focusHint)}`,
   ].join('\n');
 }
 
@@ -95,6 +190,71 @@ function formatFinalSummary(session: GrillSession) {
     `- Skor akhir: ${formatScoreValue(session)}/${session.answeredCount || session.totalQuestions}`,
     `- Jawaban penuh benar: ${session.correctCount}`,
     `- Jawaban sebagian benar: ${session.partialCount}`,
+    `- Level akhir: ${formatDifficultyLabel(session.difficultyLevel)}`,
+    `- Fokus belajar terakhir: ${formatFocusHint(session.focusHint)}`,
+  ].join('\n');
+}
+
+function buildRemedialRecommendations(session: GrillSession) {
+  if (!session.questionReviews.length) {
+    return ['Mulai lagi dengan 1-2 soal dasar agar baseline kemampuan lebih jelas.'];
+  }
+
+  const focusCounts = new Map<FocusArea, number>([
+    ['DASAR', 0],
+    ['APLIKASI', 0],
+    ['ANALISIS', 0],
+    ['KETELITIAN', 0],
+  ]);
+  let conceptPenalty = 0;
+  let processPenalty = 0;
+  let clarityPenalty = 0;
+
+  for (const review of session.questionReviews) {
+    focusCounts.set(review.focusArea, (focusCounts.get(review.focusArea) || 0) + 1);
+    conceptPenalty += 2 - review.rubric.conceptAccuracy;
+    processPenalty += 2 - review.rubric.processAccuracy;
+    clarityPenalty += 1 - review.rubric.explanationClarity;
+  }
+
+  const dominantFocus = [...focusCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || session.focusHint;
+  const recommendations: string[] = [];
+
+  if (dominantFocus === 'DASAR') {
+    recommendations.push('Ulangi konsep inti dan rumus dasar sebelum naik ke soal aplikasi.');
+  } else if (dominantFocus === 'APLIKASI') {
+    recommendations.push('Latih penerapan konsep ke variasi kasus nyata atau soal cerita singkat.');
+  } else if (dominantFocus === 'ANALISIS') {
+    recommendations.push('Fokus ke pembuktian, alasan memilih rumus, dan hubungan antar konsep.');
+  } else if (dominantFocus === 'KETELITIAN') {
+    recommendations.push('Perlambat ritme pengerjaan dan biasakan cek ulang langkah hitung atau substitusi.');
+  }
+
+  if (conceptPenalty >= processPenalty && conceptPenalty >= clarityPenalty) {
+    recommendations.push('Sebelum sesi berikutnya, baca ulang contoh inti lalu jelaskan konsep itu dengan kata-katamu sendiri.');
+  }
+  if (processPenalty > conceptPenalty) {
+    recommendations.push('Kerjakan 2-3 soal serupa dengan menulis langkah lengkap, bukan jawaban akhir saja.');
+  }
+  if (clarityPenalty > 0) {
+    recommendations.push('Biasakan menuliskan alasan singkat mengapa kamu memilih rumus atau strategi tertentu.');
+  }
+
+  return recommendations.slice(0, 3);
+}
+
+function formatRemedialBlock(session: GrillSession) {
+  const recommendations = buildRemedialRecommendations(session);
+  const docs = recommendKnowledgeDocuments({
+    topic: session.topic,
+    focusHint: session.focusHint,
+    weakestDimension: null,
+    limit: 2,
+  });
+  return [
+    '## Remedial Otomatis',
+    ...recommendations.map((item) => `- ${item}`),
+    ...(docs.length ? ['', '### Bacaan yang Disarankan', ...docs.map((doc) => `- ${doc.title}: ${doc.reason}`)] : []),
   ].join('\n');
 }
 
@@ -132,8 +292,30 @@ function parseScoreMark(text: string): ScoreMark {
   return (match?.[1]?.toUpperCase() as ScoreMark) || 'SALAH';
 }
 
+function parseRubricScores(text: string): RubricScores {
+  const concept = Number(text.match(CONCEPT_RE)?.[1] || 0) as 0 | 1 | 2;
+  const process = Number(text.match(PROCESS_RE)?.[1] || 0) as 0 | 1 | 2;
+  const clarity = Number(text.match(CLARITY_RE)?.[1] || 0) as 0 | 1;
+  return {
+    conceptAccuracy: concept,
+    processAccuracy: process,
+    explanationClarity: clarity,
+  };
+}
+
+function parseFocusArea(text: string): FocusArea {
+  return (text.match(FOCUS_RE)?.[1] as FocusArea) || 'DASAR';
+}
+
 function stripScoreMark(text: string) {
-  return text.replace(SCORE_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+  return text
+    .replace(SCORE_RE, '')
+    .replace(CONCEPT_RE, '')
+    .replace(PROCESS_RE, '')
+    .replace(CLARITY_RE, '')
+    .replace(FOCUS_RE, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function applyScoreMark(session: GrillSession, mark: ScoreMark) {
@@ -156,6 +338,35 @@ function parseQuestionReviews(raw: string | null | undefined): QuestionReview[] 
   }
 }
 
+function updateAdaptiveState(session: GrillSession, scoreMark: ScoreMark, rubric: RubricScores, focusArea: FocusArea) {
+  session.focusHint = focusArea;
+  const totalRubric = rubric.conceptAccuracy + rubric.processAccuracy + rubric.explanationClarity;
+
+  if (scoreMark === 'BENAR' && totalRubric >= 4) {
+    session.difficultyLevel = clamp(session.difficultyLevel + 1, 1, 3);
+    return;
+  }
+
+  if (scoreMark === 'SALAH' || rubric.conceptAccuracy === 0) {
+    session.difficultyLevel = clamp(session.difficultyLevel - 1, 1, 3);
+    return;
+  }
+
+  if (scoreMark === 'SEBAGIAN' && totalRubric >= 3 && session.hardMode) {
+    session.difficultyLevel = clamp(session.difficultyLevel + 1, 1, 3);
+  }
+}
+
+function formatRubricBlock(rubric: RubricScores, focusArea: FocusArea) {
+  return [
+    '## Rubrik Penilaian',
+    `- Akurasi konsep: ${rubric.conceptAccuracy}/2`,
+    `- Ketelitian langkah: ${rubric.processAccuracy}/2`,
+    `- Kejelasan penjelasan: ${rubric.explanationClarity}/1`,
+    `- Fokus berikutnya: ${formatFocusHint(focusArea)}`,
+  ].join('\n');
+}
+
 function toStoredSession(session: GrillSession, sessionKey: string) {
   return {
     sessionKey,
@@ -167,6 +378,8 @@ function toStoredSession(session: GrillSession, sessionKey: string) {
     currentQuestionText: session.currentQuestionText,
     phase: session.phase,
     hardMode: session.hardMode,
+    difficultyLevel: session.difficultyLevel,
+    focusHint: session.focusHint,
     answeredCount: session.answeredCount,
     correctCount: session.correctCount,
     partialCount: session.partialCount,
@@ -185,6 +398,8 @@ function fromStoredSession(row: Awaited<ReturnType<typeof getPersistedGrillSessi
     currentQuestionText: row.currentQuestionText ?? null,
     phase: row.phase as GrillPhase,
     hardMode: Boolean(row.hardMode),
+    difficultyLevel: row.difficultyLevel,
+    focusHint: (row.focusHint as FocusArea | null) || 'DASAR',
     answeredCount: row.answeredCount,
     correctCount: row.correctCount,
     partialCount: row.partialCount,
@@ -216,6 +431,8 @@ async function archiveAndClearSession(sessionKey: string, session: GrillSession,
     partialCount: session.partialCount,
     timerSeconds: session.timerSeconds,
     hardMode: session.hardMode,
+    difficultyLevel: session.difficultyLevel,
+    focusHint: session.focusHint,
     endedReason: reason,
     finalReview,
     questionReviews: serializeQuestionReviews(session.questionReviews),
@@ -259,6 +476,7 @@ async function buildQuestion(session: GrillSession, adminConfig: AdminConfig) {
   const difficulty = session.hardMode
     ? 'Naikkan tingkat kesulitan sedikit demi sedikit dan buat soal lebih menantang.'
     : 'Jaga tingkat kesulitan tetap wajar untuk latihan bertahap.';
+  const blueprint = inferTopicBlueprint(session.topic);
 
   const response = await generateSkillResponse({
     message: `Buat soal ${session.currentQuestion} dari ${session.totalQuestions} untuk topik ${session.topic}`,
@@ -268,6 +486,9 @@ async function buildQuestion(session: GrillSession, adminConfig: AdminConfig) {
       'Setelah soal, beri petunjuk singkat bila perlu. Jangan beri evaluasi atau soal berikutnya.',
     externalContext:
       `${difficulty}\n` +
+      `Target level soal: ${formatDifficultyLabel(session.difficultyLevel)}.\n` +
+      `Fokus area: ${formatFocusHint(session.focusHint)}.\n` +
+      `${blueprint}\n` +
       `Materi acuan:\n${session.material}\n\n` +
       `Gunakan timer label: ${timerLabel || 'tanpa timer'}.`,
     adminConfig,
@@ -289,6 +510,7 @@ async function buildEvaluation(session: GrillSession, answer: string, adminConfi
       'Buat evaluasi jawaban user. Gunakan judul `## Evaluasi Jawaban`. ' +
       'Jelaskan yang sudah kuat, yang perlu diperbaiki, dan pembahasan ringkas. ' +
       'JANGAN tampilkan soal berikutnya dalam balasan yang sama. ' +
+      'Setelah evaluasi naratif, tambahkan marker persis: `Akurasi Konsep: X/2`, `Ketelitian Langkah: Y/2`, `Kejelasan Penjelasan: Z/1`, `Fokus Berikutnya: DASAR|APLIKASI|ANALISIS|KETELITIAN`. ' +
       'Tambahkan satu baris terakhir persis dengan format `Skor Soal: BENAR`, `Skor Soal: SEBAGIAN`, atau `Skor Soal: SALAH`. ' +
       promptTail,
     externalContext:
@@ -347,6 +569,8 @@ function makeEndedReply(session: GrillSession, reason: 'user' | 'completed') {
     reason === 'completed' ? 'Sesi latihan selesai.' : 'Sesi latihan diakhiri.',
     '',
     formatFinalSummary(session),
+    '',
+    formatRemedialBlock(session),
     '',
     'Kalau mau, kirim topik baru untuk mulai sesi berikutnya.',
   ].join('\n');
@@ -415,6 +639,8 @@ export async function runGrillSession(input: {
       currentQuestionText: null,
       phase: 'awaiting_ready',
       hardMode: config.hardMode,
+      difficultyLevel: config.hardMode ? 2 : 1,
+      focusHint: 'DASAR',
       answeredCount: 0,
       correctCount: 0,
       partialCount: 0,
@@ -451,24 +677,33 @@ export async function runGrillSession(input: {
   }
 
   if (session.phase === 'awaiting_answer') {
+    const questionDifficultyLevel = session.difficultyLevel;
     const evaluation = await buildEvaluation(session, rawMessage, input.adminConfig);
     const scoreMark = parseScoreMark(evaluation);
+    const rubric = parseRubricScores(evaluation);
+    const focusArea = parseFocusArea(evaluation);
     const cleanedEvaluation = stripScoreMark(evaluation);
     applyScoreMark(session, scoreMark);
+    updateAdaptiveState(session, scoreMark, rubric, focusArea);
     session.questionReviews.push({
       questionNumber: session.currentQuestion,
       questionText: session.currentQuestionText || '',
       userAnswer: rawMessage,
       evaluation: cleanedEvaluation,
       scoreMark,
+      difficultyLevel: questionDifficultyLevel,
+      focusArea,
+      rubric,
     });
     session.phase = session.currentQuestion >= session.totalQuestions ? 'completed' : 'awaiting_continue';
 
     const reply = [
       cleanedEvaluation,
       '',
+      formatRubricBlock(rubric, focusArea),
+      '',
       formatProgressBlock(session),
-      ...(session.phase === 'completed' ? ['', 'Sesi latihan sudah selesai.', '', formatFinalSummary(session)] : []),
+      ...(session.phase === 'completed' ? ['', 'Sesi latihan sudah selesai.', '', formatFinalSummary(session), '', formatRemedialBlock(session)] : []),
     ].join('\n');
 
     if (session.phase === 'completed') {
@@ -482,6 +717,8 @@ export async function runGrillSession(input: {
         partialCount: session.partialCount,
         timerSeconds: session.timerSeconds,
         hardMode: session.hardMode,
+        difficultyLevel: session.difficultyLevel,
+        focusHint: session.focusHint,
         endedReason: 'completed',
         finalReview: reply,
         questionReviews: serializeQuestionReviews(session.questionReviews),
