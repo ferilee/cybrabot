@@ -1,0 +1,7 @@
+{
+  "id": "pdf-generation",
+  "title": "Pembuatan PDF",
+  "description": "Skill untuk membantu proses pembuatan, formatting, atau pengeditan dokumen menjadi format PDF.",
+  "triggers": ["pdf", "generate pdf", "buat pdf", "bikin pdf", "export pdf", "cetak pdf"],
+  "modelHint": "chat"
+}

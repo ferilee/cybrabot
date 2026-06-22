@@ -1,0 +1,7 @@
+{
+  "id": "pandoc",
+  "title": "Pandoc",
+  "description": "Membantu pengguna mengonversi dokumen antar berbagai format menggunakan alat Pandoc.",
+  "triggers": ["pandoc", "konversi dokumen", "convert document", "markdown to pdf", "docx to markdown", "latex"],
+  "modelHint": "chat"
+}

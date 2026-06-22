@@ -1,0 +1,7 @@
+{
+  "id": "vision",
+  "title": "Vision",
+  "description": "Skill untuk menganalisis gambar, mengekstrak teks, dan memahami konteks visual.",
+  "triggers": ["vision", "gambar", "image", "foto", "analisa gambar", "lihat ini", "baca gambar"],
+  "modelHint": "vision"
+}

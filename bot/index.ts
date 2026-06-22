@@ -1475,6 +1475,19 @@ bot.command('humanis', async (ctx) => {
   });
 });
 
+bot.command('rich', async (ctx) => {
+  if (!shouldHandleGroupCommand(ctx)) {
+    return;
+  }
+
+  await ctx.api.sendRichMessage({
+    chat_id: ctx.chat.id,
+    rich_message: {
+      markdown: "## Demo Rich Message Telegram\n\nFitur ini menggunakan Bot API 10.1 untuk menampilkan *rich text*!\n\n> Ini adalah block quotation. Sangat berguna untuk mengutip sesuatu secara elegan.\n\nContoh elemen lainnya:\n- **Teks tebal**\n- *Teks miring*\n- ==Teks di-highlight==\n- ||Spoiler||\n\n| Kolom Kiri | Kolom Kanan |\n|:---|:---|\n| Baris 1 | Data |\n| Baris 2 | Data |\n\n**CybraFeriBot** sekarang semakin keren! 🚀"
+    }
+  });
+});
+
 bot.command('admin_status', async (ctx) => {
   if (!(await requireOwner(ctx))) {
     return;
