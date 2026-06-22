@@ -176,6 +176,7 @@ function parseTelemetryPayload(payload: string | null) {
 function getAssetPath(fileName: string) {
   const assetsDir = join(import.meta.dir, '..', 'assets');
   const allowedAssets = new Map([
+    ['DianyssaBot.webp', join(assetsDir, 'DianyssaBot.webp')],
     ['cybrabot-logo.png', join(assetsDir, 'cybrabot-logo.png')],
     ['cybrabot-logo.webp', join(assetsDir, 'cybrabot-logo.webp')],
     ['favicon.png', join(assetsDir, 'favicon.png')],
@@ -355,7 +356,7 @@ function renderLoginPage(options: {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Login | CybraFeriBot</title>
+      <title>Login | DIANYSSA - ASISTEN DIGITAL</title>
       <link rel="icon" type="image/png" href="/assets/favicon.png">
       <link rel="icon" type="image/x-icon" href="/favicon.ico">
       <link rel="apple-touch-icon" href="/assets/favicon.png">
@@ -461,9 +462,9 @@ function renderLoginPage(options: {
     </head>
     <body>
       <main class="panel">
-        <div class="eyebrow">CybraFeriBot</div>
+        <div class="eyebrow">DIANYSSA - ASISTEN DIGITAL</div>
         <h1>Masuk dengan Google</h1>
-        <img class="hero-logo" src="/assets/cybrabot-logo.png" alt="CybraFeriBot logo">
+        <img class="hero-logo" src="/assets/DianyssaBot.webp" alt="DIANYSSA - ASISTEN DIGITAL logo">
         ${options.error ? `<div class="status">${escapeHtml(options.error)}</div>` : ''}
         ${!options.configured ? '<div class="status">Google OAuth belum dikonfigurasi. Isi GOOGLE_CLIENT_ID dan GOOGLE_CLIENT_SECRET terlebih dahulu.</div>' : ''}
         <div class="actions">

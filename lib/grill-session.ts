@@ -11,7 +11,7 @@ import { recommendKnowledgeDocuments } from './grill-recommendations';
 import { retrieveKnowledge } from './knowledge';
 
 type GrillPhase = 'awaiting_answer' | 'completed';
-type ScoreMark = 'BENAR' | 'SEBAGIAN' | 'SALAH';
+type ScoreMark = 'BENAR' | 'SEBAGIAN' | 'SALAH' | 'BELUM_LENGKAP';
 type FocusArea = 'DASAR' | 'APLIKASI' | 'ANALISIS' | 'KETELITIAN';
 type RubricScores = {
   conceptAccuracy: 0 | 1 | 2;
@@ -50,7 +50,7 @@ const READY_RE = /\b(siap|mulai|gas|lanjut mulai|ayo mulai|start)\b/i;
 const CONTINUE_RE = /\b(lanjut|next|soal berikutnya|lanjutkan)\b/i;
 const END_RE = /\b(akhiri sesi|selesai sesi|sudahi sesi|stop sesi|berhenti sesi|end session|akhiri latihan)\b/i;
 const NEW_SESSION_RE = /\b(uji saya|tes saya|grill me|interview saya|latihan interview|kritisi jawaban saya)\b/i;
-const SCORE_RE = /^Skor Soal:\s*(BENAR|SEBAGIAN|SALAH)\s*$/im;
+const SCORE_RE = /^Skor Soal:\s*(BENAR|SEBAGIAN|SALAH|BELUM_LENGKAP)\s*$/im;
 const CONCEPT_RE = /^Akurasi Konsep:\s*([0-2])\/2\s*$/im;
 const PROCESS_RE = /^Ketelitian Langkah:\s*([0-2])\/2\s*$/im;
 const CLARITY_RE = /^Kejelasan Penjelasan:\s*([0-1])\/1\s*$/im;
@@ -283,7 +283,7 @@ function parseConfig(message: string) {
     timerSeconds = timerMatch[2] === 'menit' ? value * 60 : value;
   }
 
-  const hardMode = /\b(sulit|susah|menantang|hard|hardcore|lebih sulit|lebih susah)\b/i.test(message);
+  const hardMode = /\b(sulit|susah|menantang|hard|hardcore|lebih sulit|lebih susah|expert)\b/i.test(message);
   return { totalQuestions, timerSeconds, hardMode };
 }
 
@@ -453,7 +453,8 @@ async function buildQuestion(session: GrillSession, adminConfig: AdminConfig) {
     message: `Buat soal ${session.currentQuestion} dari ${session.totalQuestions} untuk topik ${session.topic}`,
     skillTitle: 'Grill Me',
     skillInstructions:
-      'Buat satu soal saja. Format judul harus persis `## Soal X dari Y [MM:SS]` jika ada timer, atau `## Soal X dari Y` jika tanpa timer. ' +
+      'Buat satu soal saja. Format judul harus persis `## Soal X dari Y`. ' +
+      'Jika ada timer, tambahkan teks persis: `⏱️ Waktu berjalan. Ketik jawabanmu sekarang. Aku tidak akan menunggu lebih dari [MM:SS]. Kalau kamu diam, aku akan membedah ketiadaan jawabanmu.` tepat di bawah judul. ' +
       'Setelah soal, beri petunjuk singkat bila perlu. Jangan beri evaluasi atau soal berikutnya.',
     externalContext:
       `${difficulty}\n` +
@@ -468,7 +469,7 @@ async function buildQuestion(session: GrillSession, adminConfig: AdminConfig) {
   return response.text;
 }
 
-async function buildEvaluation(session: GrillSession, answer: string, adminConfig: AdminConfig) {
+async function buildEvaluation(session: GrillSession, answer: string, adminConfig: AdminConfig, history?: ChatHistoryItem[]) {
   const hasNext = session.currentQuestion < session.totalQuestions;
   const promptTail = hasNext
     ? 'Jangan berikan ajakan berhenti atau lanjut, langsung akhiri saja evaluasinya.'
@@ -476,13 +477,14 @@ async function buildEvaluation(session: GrillSession, answer: string, adminConfi
 
   const response = await generateSkillResponse({
     message: `Evaluasi jawaban user untuk soal ${session.currentQuestion}: ${answer}`,
+    history,
     skillTitle: 'Grill Me',
     skillInstructions:
       'Buat evaluasi jawaban user. Gunakan judul `## Evaluasi Jawaban`. ' +
-      'Jelaskan yang sudah kuat, yang perlu diperbaiki, dan pembahasan ringkas. ' +
-      'JANGAN tampilkan soal berikutnya dalam balasan yang sama. ' +
-      'Setelah evaluasi naratif, tambahkan marker persis: `Akurasi Konsep: X/2`, `Ketelitian Langkah: Y/2`, `Kejelasan Penjelasan: Z/1`, `Fokus Berikutnya: DASAR|APLIKASI|ANALISIS|KETELITIAN`. ' +
-      'Tambahkan satu baris terakhir persis dengan format `Skor Soal: BENAR`, `Skor Soal: SEBAGIAN`, atau `Skor Soal: SALAH`. ' +
+      'Jika pertanyaan memiliki beberapa sub-bagian dan jawaban user belum mencakup semuanya, JANGAN berikan pembahasan atau rubrik evaluasi. Berikan marker persis `Skor Soal: BELUM_LENGKAP` dan berikan pesan konfirmasi beserta checklist bagian mana yang sudah dan belum dijawab. Namun jika user secara eksplisit menyerah, minta dilewati (contoh: "lewat", "skip", "pasrah"), abaikan kekurangan dan berikan evaluasi penuh. ' +
+      'Jika jawaban lengkap atau user menyerah: jelaskan yang sudah kuat, yang perlu diperbaiki, dan pembahasan ringkas. JANGAN tampilkan soal berikutnya. ' +
+      'Setelah evaluasi naratif (kecuali BELUM_LENGKAP), tambahkan marker persis: `Akurasi Konsep: X/2`, `Ketelitian Langkah: Y/2`, `Kejelasan Penjelasan: Z/1`, `Fokus Berikutnya: DASAR|APLIKASI|ANALISIS|KETELITIAN`. ' +
+      'Tambahkan satu baris terakhir persis dengan format `Skor Soal: BENAR`, `Skor Soal: SEBAGIAN`, `Skor Soal: SALAH`, atau `Skor Soal: BELUM_LENGKAP`. ' +
       promptTail,
     externalContext:
       `Topik: ${session.topic}\n` +
@@ -574,7 +576,7 @@ export async function runGrillSession(input: {
   if (!session && startsNew) {
     const topic = extractTopic(rawMessage);
     const totalQuestions = config.totalQuestions ?? (config.hardMode ? 5 : 3);
-    const timerSeconds = config.timerSeconds ?? null;
+    const timerSeconds = config.timerSeconds ?? (config.hardMode ? 120 : null);
     session = {
       topic,
       material: '',
@@ -607,8 +609,14 @@ export async function runGrillSession(input: {
 
   if (session.phase === 'awaiting_answer') {
     const questionDifficultyLevel = session.difficultyLevel;
-    const evaluation = await buildEvaluation(session, rawMessage, input.adminConfig);
+    const evaluation = await buildEvaluation(session, rawMessage, input.adminConfig, input.history);
     const scoreMark = parseScoreMark(evaluation);
+    const cleanedEvaluation = stripScoreMark(evaluation);
+    
+    if (scoreMark === 'BELUM_LENGKAP') {
+      return buildSessionResult(input, cleanedEvaluation);
+    }
+    
     const rubric = parseRubricScores(evaluation);
     const focusArea = parseFocusArea(evaluation);
     const cleanedEvaluation = stripScoreMark(evaluation);
