@@ -356,7 +356,7 @@ function trySelfDescribeTool(text: string, config?: AdminConfig): ToolResult {
 export function runLocalTool(text: string, config?: AdminConfig) {
   const tools = [
     { name: 'faq', fn: (value: string) => tryCapabilityTool(value, config) },
-    { name: 'faq', fn: (value: string) => trySelfDescribeTool(value, config) },
+    { name: 'self_describe' as any, fn: (value: string) => trySelfDescribeTool(value, config) },
     { name: 'math', fn: tryMathTool },
     { name: 'caption', fn: tryCaptionTool },
     { name: 'announcement', fn: tryAnnouncementTool },
