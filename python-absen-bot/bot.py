@@ -12,7 +12,7 @@ logging.basicConfig(
 
 # Ganti token di baris bawah ini dengan milik Anda untuk testing lokal,
 # Atau lebih baik ambil dari environment variable jika di production
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8715887555:AAGV7BsiXke3xNT-siEU2WPgOo-yOkmx3UA")
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8622622623:AAHozo75dLNV-IS7uKfASRe9IQPEmsVyizY")
 
 # ==========================================
 # 1. ARSITEKTUR DATABASE (Radar Pelacak)
