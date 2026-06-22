@@ -365,7 +365,7 @@ export function runLocalTool(text: string, config?: AdminConfig) {
   ] as const;
 
   for (const tool of tools) {
-    if (config && config.enabledTools[tool.name] === false) {
+    if (config && (config.enabledTools as any)[tool.name] === false) {
       continue;
     }
 

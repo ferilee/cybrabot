@@ -617,11 +617,11 @@ export function fixBadMarkdown(text: string) {
 
   const lines = fixed.split('\n');
   for (let i = 0; i < lines.length - 1; i++) {
-    const line = lines[i].trim();
+    const line = lines[i]?.trim() || '';
     if (line.includes('|') && !line.includes('---')) {
-      const nextLine = lines[i + 1].trim();
+      const nextLine = lines[i + 1]?.trim() || '';
       if (nextLine.includes('|') && !nextLine.includes('---')) {
-        const prevLine = i > 0 ? lines[i - 1].trim() : '';
+        const prevLine = i > 0 ? lines[i - 1]?.trim() || '' : '';
         if (!prevLine.includes('|') || prevLine.includes('---')) {
           const cols = line.replace(/^\||\|$/g, '').split('|').length;
           const sep = Array(Math.max(1, cols)).fill('---').join('|');

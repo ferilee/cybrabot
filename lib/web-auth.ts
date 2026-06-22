@@ -167,9 +167,14 @@ export function createGoogleAuthUrl(c: Context, nextPath = '/chat') {
     maxAge: STATE_TTL_SECONDS,
   });
 
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  if (!clientId) {
+    return '/login?error=auth_not_configured';
+  }
+
   const redirectUri = getGoogleRedirectUri(c);
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  url.searchParams.set('client_id', process.env.GOOGLE_CLIENT_ID!.trim());
+  url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', 'openid email profile');

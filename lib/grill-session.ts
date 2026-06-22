@@ -1,6 +1,7 @@
 import type { AdminConfig } from './admin-config';
 import type { ChatHistoryItem, IntentResult, SkillResponseResult } from './ai';
 import { generateSkillResponse } from './ai';
+import type { SkillChatResult } from './skill-chat';
 import {
   archivePersistedGrillSession,
   deletePersistedGrillSession,
@@ -527,7 +528,7 @@ function makeEndedReply(session: GrillSession, reason: 'user' | 'completed') {
 function buildSessionResult(
   input: { intent: IntentResult['intent']; intentModel: string | null },
   reply: string,
-): SkillResponseResult & { skill: { id: string; title: string } } {
+): SkillChatResult {
   return {
     reply,
     route: 'skill_ai',
@@ -561,7 +562,7 @@ export async function runGrillSession(input: {
   adminConfig: AdminConfig;
   intent: IntentResult['intent'];
   intentModel: string | null;
-}): Promise<SkillResponseResult & { skill: { id: string; title: string } }> {
+}): Promise<SkillChatResult> {
   const key = normalizeKey(input.sessionKey);
   const rawMessage = input.message.trim();
   const config = parseConfig(rawMessage);

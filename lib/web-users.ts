@@ -60,7 +60,7 @@ function summarizeDominantWeaknesses(grillHistory: Array<{
 
   return {
     dominantFocusLabels,
-    weakestDimension: weakestDimension?.value > 0 ? weakestDimension.id : null,
+    weakestDimension: weakestDimension && weakestDimension.value > 0 ? weakestDimension.id : null,
   };
 }
 
