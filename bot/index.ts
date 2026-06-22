@@ -266,7 +266,7 @@ async function sendRichTelegramMessage(ctx: any, text: string) {
     payload.reply_parameters = replyParameters;
   }
 
-  return ctx.api.callApi('sendRichMessage', payload as any);
+  return ctx.api.raw.sendRichMessage(payload as any);
 }
 
 async function sendRichTelegramMarkdown(ctx: any, text: string) {
@@ -282,7 +282,7 @@ async function sendRichTelegramMarkdown(ctx: any, text: string) {
     payload.reply_parameters = replyParameters;
   }
 
-  return ctx.api.callApi('sendRichMessage', payload as any);
+  return ctx.api.raw.sendRichMessage(payload as any);
 }
 
 function shouldFallbackFromRichMessage(error: any) {
