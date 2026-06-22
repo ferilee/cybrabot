@@ -60,6 +60,10 @@ def get_members(chat_id):
 # ==========================================
 # 2. LOGIKA TELEGRAM
 # ==========================================
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Perintah /start untuk menyapa pengguna."""
+    await update.message.reply_text("Halo! Saya Dianyssa. Saya siap membantu Anda. Gunakan perintah /absen saat di dalam grup untuk memanggil anggota.")
+
 async def tracker_middleware(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Menangkap pesan di grup dan mencatat anggotanya tanpa mengganggu alur pesan."""
     if update.effective_chat and update.effective_chat.type in ['group', 'supergroup']:
@@ -110,7 +114,8 @@ def main():
     
     app = Application.builder().token(TOKEN).build()
     
-    # Daftarkan command /absen
+    # Daftarkan command /absen dan /start
+    app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("absen", absen_command))
     
     # Daftarkan pendengar (tracker) untuk SELURUH pesan teks biasa (bukan command)

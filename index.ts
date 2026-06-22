@@ -1,5 +1,6 @@
 import { serve } from 'bun';
 import app from './api';
+import { bot } from './bot';
 import 'dotenv/config';
 
 const port = Number(process.env.PORT || 4129);
@@ -17,3 +18,12 @@ serve({
   fetch: app.fetch,
   port: port,
 });
+
+// Di lokal (saat menggunakan 'bun run dev'), kita jalankan bot dengan mode polling
+// karena Telegram tidak bisa mengirim pesan (webhook) ke localhost.
+if (process.env.NODE_ENV !== 'production') {
+  console.log("🛠️ Memulai bot dalam mode polling (lokal)...");
+  bot.start({
+    onStart: () => console.log("🤖 Bot sudah terhubung dan mendengarkan pesan!")
+  }).catch(console.error);
+}

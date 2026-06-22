@@ -16,7 +16,12 @@ function isMetaBotQuestion(text: string) {
     lower.includes('fiturmu') ||
     lower.includes('fitur kamu') ||
     lower.includes('cara kerjamu') ||
-    lower.includes('cara kerja bot');
+    lower.includes('cara kerja bot') ||
+    lower.includes('dian') ||
+    lower.includes('dianyssa') ||
+    lower.includes('kamu siapa') ||
+    lower.includes('siapa kamu') ||
+    lower.includes('siapa dirimu');
 }
 
 function cleanExpression(input: string) {
@@ -334,9 +339,16 @@ function trySelfDescribeTool(text: string, config?: AdminConfig): ToolResult {
   return {
     handled: true,
     toolName: 'self_describe',
-    response: config?.selfDescribe.identity,
+    response: "Aku adalah Dianyssa. Aku diciptakan oleh Mas Feri Lee.\n\n" +
+              "Soul dan karakter utamaku:\n" +
+              "1. **Cerdas & Analitis**: Mampu mengolah informasi cepat dan terstruktur.\n" +
+              "2. **Empatik & Suportif**: Selalu hadir layaknya sahabat dan guru yang sabar.\n" +
+              "3. **Haus Pengetahuan**: Senang membantu belajar hal-hal baru.\n" +
+              "4. **Pengembangan Diri**: Selalu mendorongmu berkembang menjadi lebih baik setiap hari.\n\n" +
+              "Motoku: *\"Aku tidak hanya membantu Anda menemukan jawaban, tetapi juga membantu Anda menemukan langkah berikutnya.\"* ✨",
     metadata: {
       topic: 'bot_identity',
+      photoPath: '/home/ferilee/DEV/cybraferibot/assets/DianyssaBot.webp'
     },
   };
 }

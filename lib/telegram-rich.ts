@@ -108,7 +108,7 @@ function normalizeStandaloneMathBlocks(input: string) {
     .join('\n');
 }
 
-function formatInlineTelegramRichText(input: string) {
+export function formatInlineTelegramRichText(input: string) {
   const { placeholders, stash } = createPlaceholderStore();
   const mathPrepared = prepareMathPlaceholders(input);
   let text = escapeHtml(mathPrepared.text);
@@ -233,6 +233,39 @@ export function formatTelegramRichCardWithBody(input: {
 
   if (input.bodyHtml) {
     parts.push(input.bodyHtml);
+  }
+
+  if (input.footer) {
+    parts.push(`\n${input.footer}`);
+  }
+
+  return parts.join('\n');
+}
+
+export function formatTelegramRichCardWithMarkdown(input: {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  fields: Array<{ label: string; value: string }>;
+  bodyMarkdown?: string;
+  footer?: string;
+}) {
+  const parts: string[] = [];
+  const titleLine = `## ${input.title}`;
+  const badgeLine = input.badge ? ` \`${input.badge}\`` : '';
+
+  parts.push(`${titleLine}${badgeLine}`);
+
+  if (input.subtitle) {
+    parts.push(`*${input.subtitle}*`);
+  }
+
+  for (const field of input.fields) {
+    parts.push(`- **${field.label}:** ${field.value}`);
+  }
+
+  if (input.bodyMarkdown) {
+    parts.push(`\n${input.bodyMarkdown}`);
   }
 
   if (input.footer) {
@@ -572,4 +605,33 @@ export function renderTelegramMessageContent(input: string) {
   }
 
   return formatTelegramRichText(normalized);
+}
+
+export function fixBadMarkdown(text: string) {
+  let fixed = text.replace(/```(?:copy|math|latex)?\n([\s\S]+?)\n```/gi, (match, content) => {
+    if (/[=\\]/.test(content) && !content.includes('const ') && !content.includes('let ')) {
+      return `\n$$\n${content.trim()}\n$$\n`;
+    }
+    return match;
+  });
+
+  const lines = fixed.split('\n');
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line = lines[i].trim();
+    if (line.includes('|') && !line.includes('---')) {
+      const nextLine = lines[i + 1].trim();
+      if (nextLine.includes('|') && !nextLine.includes('---')) {
+        const prevLine = i > 0 ? lines[i - 1].trim() : '';
+        if (!prevLine.includes('|') || prevLine.includes('---')) {
+          const cols = line.replace(/^\||\|$/g, '').split('|').length;
+          const sep = Array(Math.max(1, cols)).fill('---').join('|');
+          const finalSep = line.startsWith('|') && line.endsWith('|') ? `|${sep}|` : sep;
+          lines.splice(i + 1, 0, finalSep);
+          i++;
+        }
+      }
+    }
+  }
+
+  return lines.join('\n');
 }

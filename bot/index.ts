@@ -18,7 +18,7 @@ import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreference
 import { getRuntimeResponse } from '../lib/runtime-responses';
 import { runSkillChat } from '../lib/skill-chat';
 import { runLocalTool } from '../lib/tools';
-import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, getTelegramDraftStatusHtml, renderTelegramHtmlFallback, renderTelegramMessageContent, simplifyTelegramRichContent } from '../lib/telegram-rich';
+import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, getTelegramDraftStatusHtml, renderTelegramHtmlFallback, renderTelegramMessageContent, simplifyTelegramRichContent, fixBadMarkdown, formatInlineTelegramRichText } from '../lib/telegram-rich';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 if (token.startsWith('123456')) {
@@ -269,6 +269,22 @@ async function sendRichTelegramMessage(ctx: any, text: string) {
   return ctx.api.callApi('sendRichMessage', payload as any);
 }
 
+async function sendRichTelegramMarkdown(ctx: any, text: string) {
+  const payload: Record<string, unknown> = {
+    chat_id: ctx.chat.id,
+    rich_message: {
+      markdown: limitRichTelegramMessage(text),
+    },
+  };
+
+  const replyParameters = buildReplyParameters(ctx);
+  if (replyParameters) {
+    payload.reply_parameters = replyParameters;
+  }
+
+  return ctx.api.callApi('sendRichMessage', payload as any);
+}
+
 function shouldFallbackFromRichMessage(error: any) {
   const description = error?.description || error?.message || '';
   return (
@@ -330,6 +346,23 @@ async function replySafely(ctx: any, text: string) {
       const plainText = limitTelegramMessage(htmlFallback.replace(/<[^>]+>/g, ''));
       await ctx.reply(plainText);
     }
+  }
+}
+
+async function replySafelyMarkdown(ctx: any, markdownText: string) {
+  const fixedMarkdown = fixBadMarkdown(markdownText);
+  const limitedText = limitRichTelegramMessage(fixedMarkdown);
+  try {
+    await sendRichTelegramMarkdown(ctx, limitedText);
+  } catch (error: any) {
+    await logEvent('telegram.rich_message_markdown_failed', {
+      chatId: ctx?.chat?.id ?? null,
+      messageId: ctx?.message?.message_id ?? null,
+      error: stringifyTelegramError(error),
+    }, 'warn');
+    
+    // Fallback to sending it as plain HTML since the markdown renderer failed
+    await replySafely(ctx, markdownText);
   }
 }
 
@@ -636,7 +669,12 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
       model: answer.model,
       latencyMs: answer.latencyMs,
     });
-    await replySafely(ctx, answer.text);
+    
+    if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
+      await replySafelyMarkdown(ctx, answer.text);
+    } else {
+      await replySafely(ctx, formatTelegramRichText(answer.text));
+    }
 
     await db.insert(messages).values({
       userId,
@@ -1982,7 +2020,20 @@ bot.on('message:text', async (ctx) => {
         metadata: toolResult.metadata || {},
       });
       failureStage = 'reply_tool';
-      await replySafely(ctx, toolResult.response);
+      if (typeof toolResult.metadata?.photoPath === 'string') {
+        try {
+          const captionHtml = formatInlineTelegramRichText(toolResult.response);
+          await ctx.replyWithPhoto(new InputFile(toolResult.metadata.photoPath), {
+            caption: captionHtml,
+            parse_mode: 'HTML',
+          });
+        } catch (e) {
+          console.error('Gagal mengirim foto profil Dianyssa', e);
+          await replySafely(ctx, toolResult.response);
+        }
+      } else {
+        await replySafely(ctx, toolResult.response);
+      }
 
       failureStage = 'save_tool_response';
       await db.insert(messages).values({
@@ -2033,8 +2084,7 @@ bot.on('message:text', async (ctx) => {
       intentHint: intentResult,
     });
     failureStage = 'telegram_format';
-    const telegramReply = formatTelegramRichText(response.reply);
-
+    
     await logEvent('message.ai_used', {
       userId,
       route: response.route,
@@ -2048,7 +2098,11 @@ bot.on('message:text', async (ctx) => {
       reach: response.reach,
     });
     failureStage = 'reply_ai';
-    await replySafely(ctx, telegramReply);
+    if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
+      await replySafelyMarkdown(ctx, response.reply);
+    } else {
+      await replySafely(ctx, formatTelegramRichText(response.reply));
+    }
 
     if (response.exportFile) {
       failureStage = 'reply_export_file';
