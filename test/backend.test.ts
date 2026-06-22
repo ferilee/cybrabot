@@ -1053,6 +1053,8 @@ describe('api endpoints', () => {
     expect(visitorChatHtml).toContain('katex.min.css');
     expect(visitorChatHtml).toContain('marked.min.js');
     expect(visitorChatHtml).toContain('renderMathInElement');
+    expect(visitorChatHtml).toContain('Promise.allSettled([loadSkills(), loadAgentReachStatus(), loadMe()])');
+    expect(visitorChatHtml).toContain('renderSkillButtons(skillList);');
     expect(visitorDashboard.status).toBe(302);
     expect(visitorDashboard.headers.get('location')).toBe('/chat');
     expect(adminDashboard.status).toBe(200);

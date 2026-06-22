@@ -3673,30 +3673,57 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           }
         }
 
+        function setSupportStatus(target, text) {
+          if (!target) return;
+          target.innerHTML = '<span class="reach-chip" title="' + escapeHtml(text) + '">' +
+            '<i class="reach-dot missing"></i>' + escapeHtml(text) + '</span>';
+        }
+
+        async function readJsonResponse(response) {
+          const text = await response.text();
+          try {
+            return text ? JSON.parse(text) : {};
+          } catch {
+            return { error: text || response.statusText || 'Response tidak valid.' };
+          }
+        }
+
         async function loadSkills() {
-          const response = await fetch('/api/chat/skills');
-          const data = await response.json();
-          state.skills = Array.isArray(data.skills) ? data.skills : [];
-          renderSkillButtons(skillList);
-          renderSkillButtons(mobileSkillList);
+          try {
+            const response = await fetch('/api/chat/skills');
+            const data = await readJsonResponse(response);
+            if (!response.ok) throw new Error(data.error || 'Gagal memuat skill.');
+            state.skills = Array.isArray(data.skills) ? data.skills : [];
+          } catch {
+            state.skills = [];
+          } finally {
+            renderSkillButtons(skillList);
+            renderSkillButtons(mobileSkillList);
+          }
         }
 
         async function loadAgentReachStatus() {
-          const response = await fetch('/api/agent-reach/status');
-          const data = await response.json();
-          const channels = Array.isArray(data.channels) ? data.channels : [];
-          const html = channels.map((channel) => {
-            const dotClass = channel.available ? 'reach-dot' : 'reach-dot missing';
-            return '<span class="reach-chip" title="' + escapeHtml(channel.detail) + '">' +
-              '<i class="' + dotClass + '"></i>' + escapeHtml(channel.title) + '</span>';
-          }).join('');
-          if (reachStatus) reachStatus.innerHTML = html;
-          if (mobileReachStatus) mobileReachStatus.innerHTML = html;
+          try {
+            const response = await fetch('/api/agent-reach/status');
+            const data = await readJsonResponse(response);
+            if (!response.ok) throw new Error(data.error || 'Gagal memuat Agent Reach.');
+            const channels = Array.isArray(data.channels) ? data.channels : [];
+            const html = channels.map((channel) => {
+              const dotClass = channel.available ? 'reach-dot' : 'reach-dot missing';
+              return '<span class="reach-chip" title="' + escapeHtml(channel.detail) + '">' +
+                '<i class="' + dotClass + '"></i>' + escapeHtml(channel.title) + '</span>';
+            }).join('');
+            if (reachStatus) reachStatus.innerHTML = html;
+            if (mobileReachStatus) mobileReachStatus.innerHTML = html;
+          } catch {
+            setSupportStatus(reachStatus, 'Agent Reach belum tersedia');
+            setSupportStatus(mobileReachStatus, 'Agent Reach belum tersedia');
+          }
         }
 
         async function loadMe() {
           const response = await fetch('/api/me');
-          const data = await response.json();
+          const data = await readJsonResponse(response);
           if (!response.ok) throw new Error(data.error || 'Gagal memuat profil.');
           applyQuota(data.quota);
         }
@@ -3723,7 +3750,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
                 history: state.history.slice(-12),
               }),
             });
-            const data = await response.json();
+            const data = await readJsonResponse(response);
             if (!response.ok) {
               if (data.quota) applyQuota(data.quota);
               throw new Error(data.error || 'Request failed');
@@ -3813,14 +3840,17 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           button.addEventListener('click', () => submitMessage(button.textContent));
         });
 
-        Promise.all([loadSkills(), loadAgentReachStatus(), loadMe()]).then(() => {
+        renderSkillButtons(skillList);
+        renderSkillButtons(mobileSkillList);
+        setSupportStatus(reachStatus, 'Memuat Agent Reach...');
+        setSupportStatus(mobileReachStatus, 'Memuat Agent Reach...');
+
+        Promise.allSettled([loadSkills(), loadAgentReachStatus(), loadMe()]).then(() => {
           for (const item of state.history) {
             addMessage(item.role, item.content, { route: 'riwayat' });
           }
           updateHeaderMeta({});
           input.focus();
-        }).catch(() => {
-          addMessage('assistant', 'Sebagian layanan pendukung belum berhasil dimuat. Chat tetap bisa dicoba.', { route: 'peringatan' });
         });
       </script>
     </body>

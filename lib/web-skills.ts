@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 export type WebSkill = {
@@ -11,7 +11,33 @@ export type WebSkill = {
 };
 
 const skillsDir = join(import.meta.dir, '..', 'skills');
-mkdirSync(skillsDir, { recursive: true });
+
+const fallbackSkills: WebSkill[] = [
+  {
+    id: 'general-chat',
+    title: 'General Chat',
+    description: 'Menjawab pertanyaan umum dengan jelas dan ringkas.',
+    triggers: ['tanya', 'jelaskan', 'apa', 'bagaimana', 'kenapa', 'siapa'],
+    modelHint: 'chat',
+    instructions: 'Jawab pertanyaan user dengan bahasa Indonesia yang jelas, praktis, dan terstruktur.',
+  },
+  {
+    id: 'technical-helper',
+    title: 'Technical Helper',
+    description: 'Membantu debugging, coding, deployment, dan konfigurasi teknis.',
+    triggers: ['error', 'bug', 'kode', 'deploy', 'docker', 'github', 'api', 'database', 'server', 'konfigurasi'],
+    modelHint: 'chat',
+    instructions: 'Bantu user menyelesaikan masalah teknis secara praktis. Beri langkah konkret, asumsi, dan verifikasi.',
+  },
+  {
+    id: 'grill-me',
+    title: 'Grill Me',
+    description: 'Menguji pemahaman user dengan pertanyaan balik dan tantangan berpikir kritis.',
+    triggers: ['grill me', 'uji saya', 'tes saya', 'interview saya', 'tanya balik', 'latihan interview'],
+    modelHint: 'chat',
+    instructions: 'Jalankan sesi latihan bertahap: beri bahan bacaan singkat, minta kesiapan, lalu beri soal dan evaluasi.',
+  },
+];
 
 function normalize(text: string) {
   return text
@@ -51,11 +77,17 @@ function readSkill(skillPath: string, fallbackId: string): WebSkill | null {
 }
 
 export function loadWebSkills() {
-  return readdirSync(skillsDir, { withFileTypes: true })
+  if (!existsSync(skillsDir)) {
+    return fallbackSkills;
+  }
+
+  const skills = readdirSync(skillsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => readSkill(join(skillsDir, entry.name), entry.name))
     .filter((skill): skill is WebSkill => Boolean(skill))
     .sort((a, b) => a.title.localeCompare(b.title));
+
+  return skills.length ? skills : fallbackSkills;
 }
 
 export function getWebSkill(skillId: string) {
