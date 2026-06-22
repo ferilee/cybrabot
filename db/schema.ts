@@ -13,6 +13,15 @@ export const usersRelations = relations(users, ({ many }) => ({
   messages: many(messages),
 }));
 
+export const groupMembers = sqliteTable('group_members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chatId: integer('chat_id').notNull(),
+  userId: integer('user_id').notNull(),
+  username: text('username'),
+  firstName: text('first_name'),
+  lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }).default(new Date()),
+});
+
 export const messages = sqliteTable('messages', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: integer('user_id').references(() => users.id),

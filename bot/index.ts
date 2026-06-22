@@ -3,8 +3,8 @@ import { Bot, InputFile, webhookCallback } from 'grammy';
 import { mkdirSync } from 'fs';
 import { join } from 'path';
 import { db } from '../db';
-import { users, messages } from '../db/schema';
-import { desc, eq } from 'drizzle-orm';
+import { users, messages, groupMembers } from '../db/schema';
+import { desc, eq, and } from 'drizzle-orm';
 import { analyzeText } from '../lib/nlp';
 import { generateDocumentDraft, getIntent, type ChatHistoryItem } from '../lib/ai';
 import { getAdminConfig, isOpenAICompatibleConfigured, saveAdminConfig } from '../lib/admin-config';
@@ -171,6 +171,27 @@ function shouldSkipDuplicateUpdate(ctx: any) {
   return false;
 }
 
+async function trackGroupMember(chatId: number, user: { id: number; username?: string; first_name?: string }) {
+  const existing = await db.query.groupMembers.findFirst({
+    where: and(eq(groupMembers.chatId, chatId), eq(groupMembers.userId, user.id)),
+  });
+
+  if (existing) {
+    await db.update(groupMembers).set({
+      username: user.username,
+      firstName: user.first_name,
+      lastSeenAt: new Date(),
+    }).where(eq(groupMembers.id, existing.id));
+  } else {
+    await db.insert(groupMembers).values({
+      chatId,
+      userId: user.id,
+      username: user.username,
+      firstName: user.first_name,
+    });
+  }
+}
+
 bot.use(async (ctx, next) => {
   if (shouldSkipDuplicateUpdate(ctx)) {
     await logEvent('telegram.update_deduplicated', {
@@ -179,6 +200,10 @@ bot.use(async (ctx, next) => {
       messageId: ctx.message?.message_id ?? null,
     });
     return;
+  }
+
+  if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') && ctx.from && !ctx.from.is_bot) {
+    await trackGroupMember(ctx.chat.id, ctx.from).catch(() => {});
   }
 
   await next();
@@ -1318,6 +1343,39 @@ async function handleExplicitSkillCommand(
     stopIndicator();
   }
 }
+
+bot.on('message:new_chat_members', async (ctx) => {
+  const members = ctx.message.new_chat_members;
+  for (const member of members) {
+    if (!member.is_bot) {
+      await trackGroupMember(ctx.chat.id, member).catch(() => {});
+    }
+  }
+});
+
+bot.command('absen', async (ctx) => {
+  if (!isGroupChat(ctx)) {
+    return replySafely(ctx, 'Perintah ini hanya bisa digunakan di dalam grup.');
+  }
+  if (!shouldHandleGroupCommand(ctx)) {
+    return;
+  }
+
+  const members = await db.query.groupMembers.findMany({
+    where: eq(groupMembers.chatId, ctx.chat.id),
+  });
+
+  if (members.length === 0) {
+    return replySafely(ctx, 'Belum ada anggota grup yang terekam di radar Cybra.');
+  }
+
+  const mentions = members.map(m => {
+    if (m.username) return `@${m.username}`;
+    return `<a href="tg://user?id=${m.userId}">${escapeHtml(m.firstName || 'Anggota')}</a>`;
+  }).join(' ');
+
+  await replySafely(ctx, `📢 **Panggilan kepada semua anggota grup yang terekam di radar Cybra:**\n\n${mentions}`);
+});
 
 bot.command('start', async (ctx) => {
   try {
