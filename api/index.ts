@@ -3332,10 +3332,33 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             return '<p>' + escapeHtml(source) + '</p>';
           }
 
-          const normalized = source.replaceAll(
+          let normalized = source.replaceAll(
             String.fromCharCode(13) + String.fromCharCode(10),
             String.fromCharCode(10),
           );
+
+          // Pastikan ada baris kosong sebelum tabel agar marked bisa mendeteksi tabel
+          normalized = normalized.replace(/([^\n])\n(\|[^\n]+\|)\n(\|[-: |]+\|)/g, '$1\n\n$2\n$3');
+
+          // Lindungi blok LaTeX dari markdown parsing dan DOMPurify
+          const mathBlocks = [];
+          normalized = normalized.replace(/\$\$([\s\S]*?)\$\$/g, (m, p) => {
+            mathBlocks.push(p);
+            return '%%%MATH_BLOCK_' + (mathBlocks.length - 1) + '%%%';
+          });
+          normalized = normalized.replace(/\$([^\n]+?)\$/g, (m, p) => {
+            mathBlocks.push(p);
+            return '%%%MATH_INLINE_' + (mathBlocks.length - 1) + '%%%';
+          });
+          normalized = normalized.replace(/\\\[([\s\S]*?)\\\]/g, (m, p) => {
+            mathBlocks.push(p);
+            return '%%%MATH_BLOCK_' + (mathBlocks.length - 1) + '%%%';
+          });
+          normalized = normalized.replace(/\\\(([\s\S]*?)\\\)/g, (m, p) => {
+            mathBlocks.push(p);
+            return '%%%MATH_INLINE_' + (mathBlocks.length - 1) + '%%%';
+          });
+
           markdown.setOptions({
             gfm: true,
             breaks: true,
@@ -3344,8 +3367,17 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           });
 
           const parsed = markdown.parse(normalized);
-          const sanitized = purifier.sanitize(parsed, {
+          let sanitized = purifier.sanitize(parsed, {
             USE_PROFILES: { html: true },
+          });
+
+          // Kembalikan blok LaTeX setelah DOMPurify selesai, dengan escape < dan > 
+          // agar KaTeX tidak gagal parsing
+          sanitized = sanitized.replace(/%%%MATH_BLOCK_(\d+)%%%/g, (m, i) => {
+            return '$$' + mathBlocks[i].replace(/</g, '&lt;').replace(/>/g, '&gt;') + '$$';
+          });
+          sanitized = sanitized.replace(/%%%MATH_INLINE_(\d+)%%%/g, (m, i) => {
+            return '$' + mathBlocks[i].replace(/</g, '&lt;').replace(/>/g, '&gt;') + '$';
           });
 
           return String(sanitized || '');
