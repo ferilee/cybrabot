@@ -1,5 +1,6 @@
 import { retrieveKnowledge } from './knowledge';
 import type { AdminConfig } from './admin-config';
+import { join } from 'path';
 
 type ToolResult = {
   handled: boolean;
@@ -348,7 +349,7 @@ function trySelfDescribeTool(text: string, config?: AdminConfig): ToolResult {
               "Motoku: *\"Aku tidak hanya membantu Anda menemukan jawaban, tetapi juga membantu Anda menemukan langkah berikutnya.\"* ✨",
     metadata: {
       topic: 'bot_identity',
-      photoPath: '/home/ferilee/DEV/cybraferibot/assets/DianyssaBot.webp'
+      photoPath: join(process.cwd(), 'assets', 'DianyssaBot.webp')
     },
   };
 }
