@@ -99,7 +99,7 @@ sqlite.exec(`
     timer_seconds INTEGER,
     current_question INTEGER NOT NULL DEFAULT 0,
     current_question_text TEXT,
-    phase TEXT NOT NULL DEFAULT 'awaiting_ready',
+    phase TEXT NOT NULL DEFAULT 'awaiting_answer',
     hard_mode INTEGER NOT NULL DEFAULT 0,
     difficulty_level INTEGER NOT NULL DEFAULT 1,
     focus_hint TEXT,
@@ -182,7 +182,7 @@ ensureColumn('web_chat_logs', 'skill_id', 'skill_id TEXT');
 ensureColumn('web_chat_logs', 'intent', 'intent TEXT');
 ensureColumn('web_chat_logs', 'model', 'model TEXT');
 ensureColumn('web_grill_sessions', 'current_question_text', 'current_question_text TEXT');
-ensureColumn('web_grill_sessions', 'phase', "phase TEXT NOT NULL DEFAULT 'awaiting_ready'");
+ensureColumn('web_grill_sessions', 'phase', "phase TEXT NOT NULL DEFAULT 'awaiting_answer'");
 ensureColumn('web_grill_sessions', 'hard_mode', 'hard_mode INTEGER NOT NULL DEFAULT 0');
 ensureColumn('web_grill_sessions', 'difficulty_level', 'difficulty_level INTEGER NOT NULL DEFAULT 1');
 ensureColumn('web_grill_sessions', 'focus_hint', 'focus_hint TEXT');

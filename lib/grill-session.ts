@@ -10,7 +10,7 @@ import {
 import { recommendKnowledgeDocuments } from './grill-recommendations';
 import { retrieveKnowledge } from './knowledge';
 
-type GrillPhase = 'awaiting_ready' | 'awaiting_answer' | 'awaiting_continue' | 'completed';
+type GrillPhase = 'awaiting_answer' | 'completed';
 type ScoreMark = 'BENAR' | 'SEBAGIAN' | 'SALAH';
 type FocusArea = 'DASAR' | 'APLIKASI' | 'ANALISIS' | 'KETELITIAN';
 type RubricScores = {
@@ -440,36 +440,7 @@ async function archiveAndClearSession(sessionKey: string, session: GrillSession,
   await clearSession(sessionKey);
 }
 
-async function buildMaterial(topic: string, adminConfig: AdminConfig) {
-  const matches = retrieveKnowledge(topic, 3);
-  if (!matches.length) {
-    const generated = await generateSkillResponse({
-      message: `Susun bahan bacaan ringkas untuk topik ${topic}`,
-      skillTitle: 'Grill Me',
-      skillInstructions:
-        'Buat bahan bacaan ringkas sebelum sesi uji. Jelaskan konsep inti, rumus penting, jebakan umum, dan tips belajar cepat. Jangan beri pertanyaan dulu.',
-      externalContext:
-        'Tidak ada knowledge lokal yang cocok. Jelaskan bahwa briefing ini dibuat dari pengetahuan umum model secara jujur, lalu tetap bantu user belajar.',
-      adminConfig,
-    });
-    return generated.text;
-  }
 
-  const knowledgeContext = matches
-    .map((item) => `Sumber: ${item.title}\n${item.content}`)
-    .join('\n\n');
-
-  const generated = await generateSkillResponse({
-    message: `Susun bahan bacaan ringkas untuk topik ${topic}`,
-    skillTitle: 'Grill Me',
-    skillInstructions:
-      'Gunakan knowledge lokal yang diberikan untuk membuat bahan bacaan ringkas sebelum sesi uji. Fokus pada konsep inti, rumus penting, jebakan umum, dan strategi belajar cepat. Jangan beri pertanyaan dulu.',
-    externalContext: `Knowledge lokal untuk bahan bacaan awal:\n${knowledgeContext}`,
-    adminConfig,
-  });
-
-  return generated.text;
-}
 
 async function buildQuestion(session: GrillSession, adminConfig: AdminConfig) {
   const timerLabel = formatTimer(session.timerSeconds);
@@ -500,7 +471,7 @@ async function buildQuestion(session: GrillSession, adminConfig: AdminConfig) {
 async function buildEvaluation(session: GrillSession, answer: string, adminConfig: AdminConfig) {
   const hasNext = session.currentQuestion < session.totalQuestions;
   const promptTail = hasNext
-    ? 'Akhiri dengan ajakan eksplisit: "Jika sudah siap, tekan tombol \\"Lanjut ke Soal Berikutnya\\" atau ketik lanjut."'
+    ? 'Jangan berikan ajakan berhenti atau lanjut, langsung akhiri saja evaluasinya.'
     : 'Akhiri dengan penutup bahwa sesi latihan selesai.';
 
   const response = await generateSkillResponse({
@@ -523,32 +494,7 @@ async function buildEvaluation(session: GrillSession, answer: string, adminConfi
   return response.text;
 }
 
-function makeStudyReply(session: GrillSession) {
-  const timerOption = session.timerSeconds
-    ? `Timer aktif ${formatTimerOption(session.timerSeconds)}`
-    : 'Tanpa timer';
 
-  return [
-    `# Sesi Latihan ${session.topic}`,
-    '',
-    `${formatConfigLine(session)}`,
-    '',
-    formatProgressBlock(session),
-    '',
-    '## Bahan Bacaan Ringkas',
-    '',
-    session.material,
-    '',
-    '## Opsi Tantangan',
-    `- Jumlah soal saat ini: ${session.totalQuestions}`,
-    `- ${timerOption}`,
-    `- Mode tantangan: ${session.hardMode ? 'lebih sulit' : 'standar'}`,
-    '',
-    'Kalau mau ubah konfigurasi, kirim misalnya `5 soal`, `10 soal`, `30 detik`, atau `1 menit per soal`.',
-    'Kalau sudah siap, ketik `siap` untuk mulai soal pertama.',
-    'Kalau ingin berhenti, ketik `akhiri sesi`.',
-  ].join('\n');
-}
 
 function makeQuestionReply(session: GrillSession) {
   return [
@@ -629,15 +575,14 @@ export async function runGrillSession(input: {
     const topic = extractTopic(rawMessage);
     const totalQuestions = config.totalQuestions ?? (config.hardMode ? 5 : 3);
     const timerSeconds = config.timerSeconds ?? null;
-    const material = await buildMaterial(topic, input.adminConfig);
     session = {
       topic,
-      material,
+      material: '',
       totalQuestions,
       timerSeconds,
-      currentQuestion: 0,
+      currentQuestion: 1,
       currentQuestionText: null,
-      phase: 'awaiting_ready',
+      phase: 'awaiting_answer',
       hardMode: config.hardMode,
       difficultyLevel: config.hardMode ? 2 : 1,
       focusHint: 'DASAR',
@@ -646,8 +591,9 @@ export async function runGrillSession(input: {
       partialCount: 0,
       questionReviews: [],
     };
+    session.currentQuestionText = await buildQuestion(session, input.adminConfig);
     await persistSession(key, session);
-    return buildSessionResult(input, makeStudyReply(session));
+    return buildSessionResult(input, makeQuestionReply(session));
   }
 
   if (!session) {
@@ -657,23 +603,6 @@ export async function runGrillSession(input: {
   if (NEW_SESSION_RE.test(rawMessage)) {
     await clearSession(key);
     return runGrillSession(input);
-  }
-
-  if (session.phase === 'awaiting_ready') {
-    if (config.totalQuestions) session.totalQuestions = config.totalQuestions;
-    if (config.timerSeconds !== null) session.timerSeconds = config.timerSeconds;
-    if (config.hardMode) session.hardMode = true;
-    await persistSession(key, session);
-
-    if (!READY_RE.test(rawMessage)) {
-      return buildSessionResult(input, makeStudyReply(session));
-    }
-
-    session.currentQuestion = 1;
-    session.currentQuestionText = await buildQuestion(session, input.adminConfig);
-    session.phase = 'awaiting_answer';
-    await persistSession(key, session);
-    return buildSessionResult(input, makeQuestionReply(session));
   }
 
   if (session.phase === 'awaiting_answer') {
@@ -695,7 +624,15 @@ export async function runGrillSession(input: {
       focusArea,
       rubric,
     });
-    session.phase = session.currentQuestion >= session.totalQuestions ? 'completed' : 'awaiting_continue';
+
+    session.phase = session.currentQuestion >= session.totalQuestions ? 'completed' : 'awaiting_answer';
+
+    let nextQuestionText = '';
+    if (session.phase === 'awaiting_answer') {
+      session.currentQuestion += 1;
+      session.currentQuestionText = await buildQuestion(session, input.adminConfig);
+      nextQuestionText = `\n\n${session.currentQuestionText}`;
+    }
 
     const reply = [
       cleanedEvaluation,
@@ -703,6 +640,7 @@ export async function runGrillSession(input: {
       formatRubricBlock(rubric, focusArea),
       '',
       formatProgressBlock(session),
+      nextQuestionText,
       ...(session.phase === 'completed' ? ['', 'Sesi latihan sudah selesai.', '', formatFinalSummary(session), '', formatRemedialBlock(session)] : []),
     ].join('\n');
 
@@ -729,21 +667,6 @@ export async function runGrillSession(input: {
 
     await persistSession(key, session);
     return buildSessionResult(input, reply);
-  }
-
-  if (session.phase === 'awaiting_continue') {
-    if (!CONTINUE_RE.test(rawMessage)) {
-      return buildSessionResult(
-        input,
-        'Silakan pelajari evaluasinya dulu. Kalau sudah siap, tekan tombol "Lanjut ke Soal Berikutnya" atau ketik `lanjut`. Untuk menghentikan sesi, ketik `akhiri sesi`.',
-      );
-    }
-
-    session.currentQuestion += 1;
-    session.currentQuestionText = await buildQuestion(session, input.adminConfig);
-    session.phase = 'awaiting_answer';
-    await persistSession(key, session);
-    return buildSessionResult(input, makeQuestionReply(session));
   }
 
   await clearSession(key);

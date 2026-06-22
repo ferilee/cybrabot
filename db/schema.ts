@@ -101,7 +101,7 @@ export const webGrillSessions = sqliteTable('web_grill_sessions', {
   timerSeconds: integer('timer_seconds'),
   currentQuestion: integer('current_question').notNull().default(0),
   currentQuestionText: text('current_question_text'),
-  phase: text('phase').notNull().default('awaiting_ready'),
+  phase: text('phase').notNull().default('awaiting_answer'),
   hardMode: integer('hard_mode', { mode: 'boolean' }).notNull().default(false),
   difficultyLevel: integer('difficulty_level').notNull().default(1),
   focusHint: text('focus_hint'),

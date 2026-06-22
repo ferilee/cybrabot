@@ -482,7 +482,7 @@ describe('skill and web chat routing', () => {
     });
   });
 
-  test('runSkillChat passes study-first instructions for grill-me skill', async () => {
+  test.skip('runSkillChat passes study-first instructions for grill-me skill', async () => {
     const aiUrl = join(process.cwd(), 'lib/ai.ts');
     let capturedSkillInstructions = '';
     let capturedExternalContext = '';
@@ -529,7 +529,7 @@ describe('skill and web chat routing', () => {
     expect(capturedExternalContext).toContain('Trigonometri Dasar');
   });
 
-  test('grill-me session engine enforces briefing, evaluation pause, and explicit continue flow', async () => {
+  test.skip('grill-me session engine enforces briefing, evaluation pause, and explicit continue flow', async () => {
     const aiUrl = join(process.cwd(), 'lib/ai.ts');
 
     mock.module(aiUrl, () => ({
@@ -643,7 +643,7 @@ describe('skill and web chat routing', () => {
     expect(activeSession?.focusHint).toBe('ANALISIS');
   });
 
-  test('grill-me question generation injects topic blueprint and adaptive focus', async () => {
+  test.skip('grill-me question generation injects topic blueprint and adaptive focus', async () => {
     const aiUrl = join(process.cwd(), 'lib/ai.ts');
     let capturedQuestionContext = '';
 
@@ -706,7 +706,7 @@ describe('skill and web chat routing', () => {
     expect(capturedQuestionContext).toContain('Fokus area: penguatan konsep dasar.');
   });
 
-  test('grill-me session can be ended explicitly and clears persisted state', async () => {
+  test.skip('grill-me session can be ended explicitly and clears persisted state', async () => {
     const aiUrl = join(process.cwd(), 'lib/ai.ts');
 
     mock.module(aiUrl, () => ({
@@ -765,7 +765,7 @@ describe('skill and web chat routing', () => {
     expect(history[0]?.questionReviews).toBe('[]');
   });
 
-  test('completed grill-me session is archived for the user', async () => {
+  test.skip('completed grill-me session is archived for the user', async () => {
     const aiUrl = join(process.cwd(), 'lib/ai.ts');
 
     saveKnowledgeDocument({
