@@ -619,7 +619,6 @@ export async function runGrillSession(input: {
     
     const rubric = parseRubricScores(evaluation);
     const focusArea = parseFocusArea(evaluation);
-    const cleanedEvaluation = stripScoreMark(evaluation);
     applyScoreMark(session, scoreMark);
     updateAdaptiveState(session, scoreMark, rubric, focusArea);
     session.questionReviews.push({
