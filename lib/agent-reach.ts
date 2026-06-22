@@ -22,13 +22,7 @@ const MAX_CONTENT_LENGTH = Number(process.env.AGENT_REACH_MAX_CHARS || 12000);
 const REQUEST_TIMEOUT_MS = Number(process.env.AGENT_REACH_TIMEOUT_MS || 15000);
 
 function commandExists(command: string) {
-  const result = spawnSync({
-    cmd: ['bash', '-lc', `command -v ${command}`],
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-
-  return result.exitCode === 0;
+  return Bun.which(command) !== null;
 }
 
 function runCommand(cmd: string[]) {
