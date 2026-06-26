@@ -388,15 +388,15 @@ function isAuthorizedGroupUser(ctx: any) {
     return false;
   }
 
-  if (from.id !== GROUP_ALLOWED_USER_ID) {
-    return false;
-  }
-
-  if (!GROUP_ALLOWED_USERNAME) {
+  if (GROUP_ALLOWED_USERNAME && String(from.username || '').toLowerCase() === GROUP_ALLOWED_USERNAME) {
     return true;
   }
 
-  return String(from.username || '').toLowerCase() === GROUP_ALLOWED_USERNAME;
+  if (GROUP_ALLOWED_USER_ID && from.id === GROUP_ALLOWED_USER_ID) {
+    return true;
+  }
+
+  return false;
 }
 
 function isBotOwner(ctx: any) {
@@ -405,15 +405,15 @@ function isBotOwner(ctx: any) {
     return false;
   }
 
-  if (from.id !== GROUP_ALLOWED_USER_ID) {
-    return false;
-  }
-
-  if (!GROUP_ALLOWED_USERNAME) {
+  if (GROUP_ALLOWED_USERNAME && String(from.username || '').toLowerCase() === GROUP_ALLOWED_USERNAME) {
     return true;
   }
 
-  return String(from.username || '').toLowerCase() === GROUP_ALLOWED_USERNAME;
+  if (GROUP_ALLOWED_USER_ID && from.id === GROUP_ALLOWED_USER_ID) {
+    return true;
+  }
+
+  return false;
 }
 
 function getBotUsername(ctx: any) {
