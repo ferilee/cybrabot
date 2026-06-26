@@ -17,6 +17,7 @@ console.log(`🚀 CybraFeriBot is running on http://localhost:${port}`);
 serve({
   fetch: app.fetch,
   port: port,
+  hostname: '0.0.0.0',
 });
 
 // Di lokal (saat menggunakan 'bun run dev'), kita jalankan bot dengan mode polling
