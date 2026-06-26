@@ -437,11 +437,11 @@ function hasBotMention(text: string, ctx: any) {
   const lower = text.toLowerCase();
   const botUsername = getBotUsername(ctx);
 
-  if (botUsername && lower.includes(`@${botUsername}`)) {
+  if (botUsername && (lower.includes(`@${botUsername}`) || lower.includes(botUsername))) {
     return true;
   }
 
-  return lower.includes('@cybraferibot') || lower.includes('cybraferibot');
+  return lower.includes('@cybraferibot') || lower.includes('cybraferibot') || lower.includes('dianyssa');
 }
 
 function shouldHandleGroupText(ctx: any, text: string) {
@@ -2178,4 +2178,4 @@ bot.on('message:text', async (ctx) => {
   }
 });
 
-export const handleUpdate = (c: any) => webhookCallback(bot, 'hono')(c);
+export const handleUpdate = (c: any) => webhookCallback(bot, 'hono', 'return', 60000)(c);
