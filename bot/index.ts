@@ -1351,6 +1351,7 @@ async function handleExplicitSkillCommand(
       adminConfig,
       requestedSkillId: options.requestedSkillId,
       intentHint: intentResult,
+      surface: 'telegram',
     });
 
     await logEvent('message.ai_used', {
@@ -2133,6 +2134,7 @@ bot.on('message:text', async (ctx) => {
       history,
       adminConfig,
       intentHint: intentResult,
+      surface: 'telegram',
     });
     failureStage = 'telegram_format';
     

@@ -93,6 +93,7 @@ export async function handleWebChat(input: WebChatRequest) {
     adminConfig,
     requestedSkillId: input.skillId,
     sessionKey: input.sessionKey,
+    surface: 'web',
   });
 
   await logEvent('web_chat.ai_used', {

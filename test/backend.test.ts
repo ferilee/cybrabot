@@ -429,6 +429,7 @@ describe('backend utilities', () => {
     expect(getWebSkill('test-driven-development')?.title).toBe('Test-Driven Development');
     expect(selectWebSkill('tolong bantu deploy docker', undefined, 'technical')?.id).toBe('technical-helper');
     expect(selectWebSkill('uji saya untuk interview backend')?.id).toBe('grill-me');
+    expect(selectWebSkill('aktifkan skill humanis')?.id).toBe('penjelasan-humanis');
     expect(selectWebSkill('jelaskan MCP dengan bahasa awam dan kasih analogi')?.id).toBe('penjelasan-humanis');
     expect(selectWebSkill('ajari saya trigonometri dari dasar')?.id).toBe('teach');
     expect(selectWebSkill('debug ini, aplikasi tidak jalan setelah deploy')?.id).toBe('diagnosing-bugs');
@@ -441,17 +442,21 @@ describe('skill and web chat routing', () => {
   test('runSkillChat uses mocked AI and agent reach metadata', async () => {
     const aiUrl = join(process.cwd(), 'lib/ai.ts');
     const agentUrl = join(process.cwd(), 'lib/agent-reach.ts');
+    let capturedSurface: string | undefined;
 
     mock.module(aiUrl, () => ({
       getIntent: async () => ({ intent: 'casual', model: 'intent-mock', latencyMs: 1, fallback: false }),
-      generateSkillResponse: async () => ({
+      generateSkillResponse: async (input: { surface?: 'telegram' | 'web' }) => {
+        capturedSurface = input.surface;
+        return {
         text: 'hasil akhir',
         model: 'chat-mock',
         latencyMs: 12,
         knowledgeMatches: ['doc-1'],
         historyCount: 0,
         fallback: false,
-      }),
+        };
+      },
     }));
 
     mock.module(agentUrl, () => ({
@@ -475,11 +480,47 @@ describe('skill and web chat routing', () => {
     expect(result.intent).toBe('casual');
     expect(result.model).toBe('chat-mock');
     expect(result.reply).toBe('hasil akhir');
+    expect(capturedSurface).toBe('telegram');
     expect(result.reach).toEqual({
       channel: 'search',
       backend: 'mock-search',
       sources: ['https://example.com'],
     });
+  });
+
+  test('handleWebChat forwards web surface to skill chat', async () => {
+    const skillChatUrl = join(process.cwd(), 'lib/skill-chat.ts');
+    let capturedSurface: string | undefined;
+
+    mock.module(skillChatUrl, () => ({
+      runSkillChat: async (input: { surface?: 'telegram' | 'web' }) => {
+        capturedSurface = input.surface;
+        return {
+          reply: 'balasan web',
+          route: 'skill_ai',
+          skill: { id: 'penjelasan-humanis', title: 'Penjelasan Humanis' },
+          model: 'chat-mock',
+          latencyMs: 7,
+          knowledgeMatches: [],
+          fallback: false,
+          reach: null,
+          intent: 'casual',
+          intentModel: 'intent-mock',
+          exportFile: null,
+        };
+      },
+    }));
+
+    const { handleWebChat } = await importFresh<typeof import('../lib/web-chat')>('lib/web-chat.ts');
+    const result = await handleWebChat({
+      message: 'jelaskan RAG dengan bahasa awam',
+      skillId: 'penjelasan-humanis',
+      history: [],
+    });
+
+    expect(capturedSurface).toBe('web');
+    expect(result.reply).toBe('balasan web');
+    expect(result.skill?.id).toBe('penjelasan-humanis');
   });
 
   test.skip('runSkillChat passes study-first instructions for grill-me skill', async () => {

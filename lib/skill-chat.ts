@@ -27,6 +27,7 @@ export async function runSkillChat(input: {
   requestedSkillId?: string;
   intentHint?: IntentResult;
   sessionKey?: string;
+  surface?: 'telegram' | 'web';
 }) {
   const history = input.history || [];
   const intentResult = input.intentHint || await getIntent(input.message, input.adminConfig);
@@ -113,6 +114,7 @@ export async function runSkillChat(input: {
     skillTitle: skill.title,
     skillInstructions: skill.instructions,
     externalContext,
+    surface: input.surface || 'telegram',
     adminConfig: input.adminConfig,
   });
 

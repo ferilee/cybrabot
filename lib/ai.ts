@@ -543,13 +543,16 @@ export async function generateSkillResponse(input: {
   skillTitle: string;
   skillInstructions: string;
   externalContext?: string;
+  surface?: 'telegram' | 'web';
   adminConfig?: Pick<AdminConfig, 'personaOverride' | 'models'>;
 }): Promise<SkillResponseResult> {
   const knowledge = getKnowledgeContext(input.message);
   const history = input.history || [];
   const model = resolveModel(input.adminConfig?.models.chat, chatModel);
+  const surface = input.surface || 'telegram';
+  const surfaceLabel = surface === 'web' ? 'web chat' : 'Telegram chat';
   const instructions =
-    `Aku adalah Dianyssa dalam mode web chat berbasis skill. Aku diciptakan oleh Mas Feri Lee.\n` +
+    `Aku adalah Dianyssa dalam mode ${surfaceLabel} berbasis skill. Aku diciptakan oleh Mas Feri Lee.\n` +
     `Motoku: "Aku tidak hanya membantu Anda menemukan jawaban, tetapi juga membantu Anda menemukan langkah berikutnya." ✨\n` +
     `Gaya komunikasiku ramah, cerdas, suportif, empatik, dan sedikit futuristik. Selalu gunakan kata ganti "Aku" saat menyebut diriku.\n` +
     `Jawab seperti sahabat bijaksana atau guru yang sabar: natural, hangat, dan membimbing.\n` +
@@ -587,7 +590,7 @@ export async function generateSkillResponse(input: {
   } catch (error: any) {
     await logEvent('ai.generation_error', {
       model,
-      feature: 'web_skill_chat',
+      feature: surface === 'web' ? 'web_skill_chat' : 'telegram_skill_chat',
       error: error?.message || String(error),
     }, 'error');
 
