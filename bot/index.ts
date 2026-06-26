@@ -1941,7 +1941,42 @@ bot.on('message:text', async (ctx) => {
       return;
     }
 
-    const text = normalizeIncomingText(rawText, ctx);
+    let text = normalizeIncomingText(rawText, ctx);
+    
+    if (ctx.message.reply_to_message) {
+      const replyTo = ctx.message.reply_to_message;
+      const repliedText = replyTo.text || replyTo.caption;
+      if (repliedText) {
+        text += `\n\n[Konteks pesan yang di-reply:\n${repliedText}\n]`;
+      }
+    }
+
+    if (isGroupChat(ctx)) {
+       const members = await db.query.groupMembers.findMany({
+         where: eq(groupMembers.chatId, ctx.chat.id)
+       });
+       if (members.length > 0) {
+         const memberList = members.map(m => m.username ? `@${m.username}` : m.firstName).join(', ');
+         text += `\n\n[Konteks Sistem: Ini adalah pesan di grup. Daftar anggota grup yang terekam: ${memberList}. Jika diminta menyapa, sebutkan username mereka dan berikan sapaan yang hangat/luwes.]`;
+         
+         const mentionedUsernames = (rawText.match(/@([a-zA-Z0-9_]+)/g) || []).map(u => u.slice(1).toLowerCase());
+         for (const username of mentionedUsernames) {
+           const member = members.find(m => m.username?.toLowerCase() === username);
+           if (member) {
+             const userMessages = await db.query.messages.findMany({
+               where: eq(messages.userId, member.userId),
+               orderBy: [desc(messages.timestamp)],
+               limit: 20,
+             });
+             if (userMessages.length > 0) {
+               const historyText = userMessages.map(m => m.content).reverse().join('\n- ');
+               text += `\n\n[Konteks Sistem: Pengguna me-mention @${username}. Berikut adalah 20 pesan terakhir dari @${username} jika kamu diminta menganalisis karakternya atau membalas berdasarkan riwayatnya:\n- ${historyText}\n]`;
+             }
+           }
+         }
+       }
+    }
+
     normalizedTextForLog = text;
     const userId = ctx.from.id;
     await ensureUserRegistered(ctx.from);
