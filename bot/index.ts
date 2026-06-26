@@ -38,6 +38,7 @@ const PROCESSED_UPDATE_TTL_MS = 10 * 60 * 1000;
 const processedUpdateIds = new Map<number, number>();
 const CHAT_ACTION_INTERVAL_MS = 3500;
 const RICH_DRAFT_REFRESH_INTERVAL_MS = 9000;
+const PROCESSING_INDICATOR_MAX_MS = Number(process.env.TELEGRAM_PROCESSING_INDICATOR_MAX_MS || 120000);
 
 type ProcessingIndicatorMode = 'text' | 'document' | 'photo' | 'export';
 type TelegramChatAction =
@@ -72,8 +73,24 @@ function startProcessingIndicator(ctx: any, mode: ProcessingIndicatorMode) {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  let maxTimer: ReturnType<typeof setTimeout> | null = null;
   let richDraftDisabled = false;
   const richDraftId = resolveRichDraftId(ctx);
+  const stop = () => {
+    stopped = true;
+    if (timer) {
+      clearTimeout(timer);
+    }
+    if (draftTimer) {
+      clearTimeout(draftTimer);
+    }
+    if (maxTimer) {
+      clearTimeout(maxTimer);
+    }
+    if (ctx?.[INDICATOR_STOP_KEY] === stop) {
+      delete ctx[INDICATOR_STOP_KEY];
+    }
+  };
 
   const tick = async () => {
     if (stopped || !ctx?.chat?.id) {
@@ -129,18 +146,21 @@ function startProcessingIndicator(ctx: any, mode: ProcessingIndicatorMode) {
   void tick();
   void streamDraft();
 
-  const stop = () => {
-    stopped = true;
-    if (timer) {
-      clearTimeout(timer);
-    }
-    if (draftTimer) {
-      clearTimeout(draftTimer);
-    }
-    if (ctx?.[INDICATOR_STOP_KEY] === stop) {
-      delete ctx[INDICATOR_STOP_KEY];
-    }
-  };
+  if (Number.isFinite(PROCESSING_INDICATOR_MAX_MS) && PROCESSING_INDICATOR_MAX_MS > 0) {
+    maxTimer = setTimeout(() => {
+      if (stopped) {
+        return;
+      }
+
+      void logEvent('telegram.processing_indicator_timeout', {
+        chatId: ctx?.chat?.id ?? null,
+        messageId: ctx?.message?.message_id ?? null,
+        mode,
+        maxDurationMs: PROCESSING_INDICATOR_MAX_MS,
+      }, 'warn');
+      stop();
+    }, PROCESSING_INDICATOR_MAX_MS);
+  }
 
   ctx[INDICATOR_STOP_KEY] = stop;
   return stop;
@@ -453,11 +473,9 @@ function shouldHandleGroupText(ctx: any, text: string) {
     return false;
   }
 
-  if (text.trim().startsWith('/')) {
-    return true;
-  }
-
-  return isReplyToThisBot(ctx) || hasBotMention(text, ctx);
+  // Di grup, pesan dari user yang diizinkan diproses langsung supaya bot tetap responsif.
+  // Mention/reply tetap didukung, tetapi tidak lagi wajib untuk user yang sudah di-whitelist.
+  return true;
 }
 
 function shouldHandleGroupMedia(ctx: any, caption = '') {
@@ -469,11 +487,7 @@ function shouldHandleGroupMedia(ctx: any, caption = '') {
     return false;
   }
 
-  if (caption.trim().startsWith('/')) {
-    return true;
-  }
-
-  return isReplyToThisBot(ctx) || hasBotMention(caption, ctx);
+  return true;
 }
 
 function normalizeIncomingText(text: string, ctx: any) {
@@ -1928,9 +1942,9 @@ bot.on('message:photo', async (ctx) => {
 
 bot.on('message:text', async (ctx) => {
   const startedAt = Date.now();
-  const stopIndicator = startProcessingIndicator(ctx, 'text');
   let failureStage = 'startup';
   let normalizedTextForLog = '';
+  let stopIndicator: (() => void) | undefined;
   try {
     if (isFromBotAccount(ctx)) {
       return;
@@ -1940,6 +1954,8 @@ bot.on('message:text', async (ctx) => {
     if (!shouldHandleGroupText(ctx, rawText)) {
       return;
     }
+
+    stopIndicator = startProcessingIndicator(ctx, 'text');
 
     let text = normalizeIncomingText(rawText, ctx);
     
@@ -2174,7 +2190,7 @@ bot.on('message:text', async (ctx) => {
     }, 'error');
     await replySafely(ctx, await getRuntimeResponse('aiError'));
   } finally {
-    stopIndicator();
+    stopIndicator?.();
   }
 });
 
