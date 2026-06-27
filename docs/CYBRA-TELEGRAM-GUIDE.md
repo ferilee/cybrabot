@@ -396,6 +396,24 @@ Sekolah buka Senin sampai Jumat pukul 07.00 sampai 15.00.
 /admin_knowledge_delete faq-sekolah
 ```
 
+### Menambah/Mengupdate Skill Dinamis
+
+Dianyssa dapat ditambahkan *skill* baru secara langsung dari Telegram tanpa perlu merestart server. Skill baru akan langsung tersedia untuk digunakan.
+
+```text
+/admin_skill_add ahli-sejarah
+Ahli Sejarah Indonesia
+Membantu pengguna belajar sejarah dengan gaya pencerita
+sejarah, pahlawan, kemerdekaan, majapahit, masa lalu
+Kamu adalah sejarawan yang menceritakan kejadian masa lalu seperti dongeng yang seru. Gunakan bahasa yang dramatis tapi akurat. Selipkan sedikit trivia menarik di setiap akhir jawaban. Jangan gunakan format yang terlalu kaku.
+```
+
+### Menghapus Skill Dinamis
+
+```text
+/admin_skill_delete ahli-sejarah
+```
+
 ## 13. Mengubah Jawaban dari Panel Admin
 
 Buka:
@@ -532,3 +550,5 @@ Pastikan mode polling tidak berjalan. Production hanya menggunakan webhook:
 | `/admin_self` | Mengubah template deskripsi bot |
 | `/admin_knowledge_add` | Menambah knowledge |
 | `/admin_knowledge_delete` | Menghapus knowledge |
+| `/admin_skill_add` | Menambah atau mengubah skill dinamis secara langsung |
+| `/admin_skill_delete` | Menghapus skill dinamis |

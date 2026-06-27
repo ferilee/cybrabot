@@ -1868,6 +1868,48 @@ bot.command('admin_knowledge_delete', async (ctx) => {
   await replySafely(ctx, `Knowledge <b>${raw}</b> dihapus.`);
 });
 
+import { saveWebSkill, deleteWebSkill } from '../lib/web-skills';
+
+bot.command('admin_skill_add', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const raw = ctx.message!.text.replace(/^\/admin_skill_add(@\w+)?/i, '').trim();
+  const [idLine, titleLine, descriptionLine, triggersLine, ...instructionsLines] = raw.split('\n');
+  const id = idLine?.trim();
+  const title = titleLine?.trim();
+  const description = descriptionLine?.trim();
+  const triggers = triggersLine?.split(',').map((t) => t.trim()).filter(Boolean);
+  const instructions = instructionsLines.join('\n').trim();
+
+  if (!id || !title || !description || !triggers || !instructions) {
+    await replySafely(
+      ctx,
+      `Format:\n<b>/admin_skill_add id-skill</b>\nJudul Skill\nDeskripsi singkat\ntrigger1, trigger2, trigger3\nInstruksi lengkap bot`
+    );
+    return;
+  }
+
+  saveWebSkill({ id, title, description, triggers, instructions, modelHint: 'chat' });
+  await replySafely(ctx, `Skill <b>${title}</b> (${id}) berhasil ditambahkan/diperbarui!`);
+});
+
+bot.command('admin_skill_delete', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const raw = ctx.message!.text.replace(/^\/admin_skill_delete(@\w+)?/i, '').trim();
+  if (!raw) {
+    await replySafely(ctx, 'Format: <b>/admin_skill_delete id-skill</b>');
+    return;
+  }
+
+  deleteWebSkill(raw);
+  await replySafely(ctx, `Skill <b>${raw}</b> dihapus.`);
+});
+
 bot.on('message:document', async (ctx) => {
   if (isFromBotAccount(ctx)) {
     return;

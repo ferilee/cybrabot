@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 
 export type WebSkill = {
@@ -128,4 +128,32 @@ export function selectWebSkill(message: string, requestedSkillId?: string, inten
   }
 
   return getWebSkill('general-chat') || scored[0]?.skill || null;
+}
+
+export function saveWebSkill(skill: WebSkill) {
+  const skillPath = join(skillsDir, skill.id);
+  if (!existsSync(skillPath)) {
+    mkdirSync(skillPath, { recursive: true });
+  }
+
+  const manifestPath = join(skillPath, 'skill.json');
+  const instructionsPath = join(skillPath, 'SKILL.md');
+
+  const manifest = {
+    id: skill.id,
+    title: skill.title,
+    description: skill.description,
+    triggers: skill.triggers,
+    modelHint: skill.modelHint,
+  };
+
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+  writeFileSync(instructionsPath, skill.instructions, 'utf8');
+}
+
+export function deleteWebSkill(skillId: string) {
+  const skillPath = join(skillsDir, skillId);
+  if (existsSync(skillPath)) {
+    rmSync(skillPath, { recursive: true, force: true });
+  }
 }
