@@ -235,7 +235,11 @@ function limitTelegramMessage(text: string) {
     return text;
   }
 
-  return `${text.slice(0, TELEGRAM_MESSAGE_LIMIT - 3)}...`;
+  const truncated = `${text.slice(0, TELEGRAM_MESSAGE_LIMIT - 20)}...`;
+  if (text.startsWith('<blockquote expandable>')) {
+    return `${truncated}</blockquote>`;
+  }
+  return truncated;
 }
 
 function limitRichTelegramMessage(text: string) {
@@ -243,7 +247,11 @@ function limitRichTelegramMessage(text: string) {
     return text;
   }
 
-  return `${text.slice(0, TELEGRAM_RICH_MESSAGE_LIMIT - 3)}...`;
+  const truncated = `${text.slice(0, TELEGRAM_RICH_MESSAGE_LIMIT - 20)}...`;
+  if (text.startsWith('<blockquote expandable>')) {
+    return `${truncated}</blockquote>`;
+  }
+  return truncated;
 }
 
 function buildReplyParameters(ctx: any) {

@@ -52,16 +52,16 @@ function prepareMathPlaceholders(input: string) {
   let text = input;
 
   text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) =>
-    stash(`<tg-math-block>${normalizeMathExpression(expr.trim())}</tg-math-block>`, 'TGMATH')
+    stash(`<tg-math-block source="${escapeHtml(expr.trim())}">${normalizeMathExpression(expr.trim())}</tg-math-block>`, 'TGMATH')
   );
   text = text.replace(/\\\[([\s\S]+?)\\\]/g, (_, expr) =>
-    stash(`<tg-math-block>${normalizeMathExpression(expr.trim())}</tg-math-block>`, 'TGMATH')
+    stash(`<tg-math-block source="${escapeHtml(expr.trim())}">${normalizeMathExpression(expr.trim())}</tg-math-block>`, 'TGMATH')
   );
   text = text.replace(/\\\((.+?)\\\)/g, (_, expr) =>
-    stash(`<tg-math>${normalizeMathExpression(expr.trim())}</tg-math>`, 'TGMATH')
+    stash(`<tg-math source="${escapeHtml(expr.trim())}">${normalizeMathExpression(expr.trim())}</tg-math>`, 'TGMATH')
   );
   text = text.replace(/(^|[^\$])\$([^\n$]+?)\$/g, (_, prefix, expr) =>
-    `${prefix}${stash(`<tg-math>${normalizeMathExpression(expr.trim())}</tg-math>`, 'TGMATH')}`
+    `${prefix}${stash(`<tg-math source="${escapeHtml(expr.trim())}">${normalizeMathExpression(expr.trim())}</tg-math>`, 'TGMATH')}`
   );
 
   return { text, placeholders };
