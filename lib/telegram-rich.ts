@@ -476,9 +476,9 @@ export function simplifyTelegramRichContent(input: string) {
   }
 
   let simplified = normalized
-    .replace(/<h[1-6]>([\s\S]*?)<\/h[1-6]>/gi, '<b>$1</b>\n')
-    .replace(/<p>([\s\S]*?)<\/p>/gi, '$1\n')
-    .replace(/<blockquote>([\s\S]*?)<\/blockquote>/gi, '<i>$1</i>\n')
+    .replace(/<h[1-6]>([\s\S]*?)<\/h[1-6]>/gi, '<b>$1</b>\n\n')
+    .replace(/<p>([\s\S]*?)<\/p>/gi, '$1\n\n')
+    .replace(/<blockquote>([\s\S]*?)<\/blockquote>/gi, '<i>$1</i>\n\n')
     .replace(/<(?:ul|ol)>\s*/gi, '')
     .replace(/\s*<\/(?:ul|ol)>/gi, '\n')
     .replace(/<li>([\s\S]*?)<\/li>/gi, '• $1\n')

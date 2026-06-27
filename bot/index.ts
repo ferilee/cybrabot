@@ -708,11 +708,11 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
     });
     
     if (answer.text.length > 800) {
-      await replySafely(ctx, `<blockquote expandable>\n${formatTelegramRichText(answer.text)}\n</blockquote>`);
+      await replySafely(ctx, `<blockquote expandable>\n${renderTelegramMessageContent(answer.text)}\n</blockquote>`);
     } else if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
       await replySafelyMarkdown(ctx, answer.text);
     } else {
-      await replySafely(ctx, formatTelegramRichText(answer.text));
+      await replySafely(ctx, renderTelegramMessageContent(answer.text));
     }
 
     await db.insert(messages).values({
@@ -1392,10 +1392,13 @@ async function handleExplicitSkillCommand(
       reach: response.reach,
     });
 
-    const telegramReply = response.reply.length > 800
-      ? `<blockquote expandable>\n${formatTelegramRichText(response.reply)}\n</blockquote>`
-      : formatTelegramRichText(response.reply);
-    await replySafely(ctx, telegramReply);
+    if (response.reply.length > 800) {
+      await replySafely(ctx, `<blockquote expandable>\n${renderTelegramMessageContent(response.reply)}\n</blockquote>`);
+    } else if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
+      await replySafelyMarkdown(ctx, response.reply);
+    } else {
+      await replySafely(ctx, renderTelegramMessageContent(response.reply));
+    }
 
     if (response.exportFile) {
       await ctx.replyWithDocument(new InputFile(response.exportFile.outputPath, response.exportFile.fileName), {
@@ -2234,11 +2237,11 @@ bot.on('message:text', async (ctx) => {
     });
     failureStage = 'reply_ai';
     if (response.reply.length > 800) {
-      await replySafely(ctx, `<blockquote expandable>\n${formatTelegramRichText(response.reply)}\n</blockquote>`);
+      await replySafely(ctx, `<blockquote expandable>\n${renderTelegramMessageContent(response.reply)}\n</blockquote>`);
     } else if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
       await replySafelyMarkdown(ctx, response.reply);
     } else {
-      await replySafely(ctx, formatTelegramRichText(response.reply));
+      await replySafely(ctx, renderTelegramMessageContent(response.reply));
     }
 
     if (response.exportFile) {
