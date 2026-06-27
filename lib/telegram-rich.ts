@@ -586,10 +586,10 @@ export function getTelegramDraftStatusHtml(mode: TelegramDraftMode) {
     case 'photo':
       return '<tg-thinking>Dianyssa sedang menganalisis gambar dan menyiapkan respons...</tg-thinking>';
     case 'export':
-      return '<tg-thinking>Dianyssa sedang menyiapkan file ekspor...</tg-thinking>';
+      return '<tg-thinking>Dianyssa sedang memproses...</tg-thinking>';
     case 'text':
     default:
-      return '<tg-thinking>Dianyssa sedang mengetik/memproses ...</tg-thinking>';
+      return '<tg-thinking>Dianyssa sedang mengetik...</tg-thinking>';
   }
 }
 

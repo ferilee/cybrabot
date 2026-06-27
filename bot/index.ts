@@ -2033,7 +2033,8 @@ bot.on('message:text', async (ctx) => {
       return;
     }
 
-    stopIndicator = startProcessingIndicator(ctx, 'text');
+    const exportRequest = detectDocumentExportRequest(rawText);
+    stopIndicator = startProcessingIndicator(ctx, exportRequest ? 'export' : 'text');
 
     let text = normalizeIncomingText(rawText, ctx);
     
@@ -2277,6 +2278,19 @@ bot.on('message:text', async (ctx) => {
   } finally {
     stopIndicator?.();
   }
+});
+
+bot.catch(async (err) => {
+  const ctx = err.ctx;
+  console.error(`[Grammy Error] Error while handling update ${ctx.update.update_id}:`);
+  const e = err.error;
+  console.error(e);
+  
+  await logEvent('telegram.webhook_error', {
+    updateId: ctx.update?.update_id ?? null,
+    chatId: ctx.chat?.id ?? null,
+    error: String(e),
+  }, 'error').catch(() => {});
 });
 
 export const handleUpdate = (c: any) => webhookCallback(bot, 'hono', 'return', 60000)(c);
