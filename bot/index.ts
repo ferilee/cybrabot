@@ -12,6 +12,7 @@ import { answerQuestionAboutDocument, explainDocumentFeatureError, summarizeDocu
 import { clearActiveDocumentSession, getActiveDocumentSession, saveActiveDocumentSession } from '../lib/document-session';
 import { cleanupExportFile, detectDocumentExportRequest, getExportProcessingMessage, materializeExportFile } from '../lib/document-export';
 import { deleteKnowledgeDocument, saveKnowledgeDocument } from '../lib/knowledge';
+import { saveWebSkill, deleteWebSkill } from '../lib/web-skills';
 import { getProviderQuotaStatus } from '../lib/provider-status';
 import { logEvent } from '../lib/observability';
 import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreferences, saveUserPreferences } from '../lib/preferences';
@@ -2009,28 +2010,32 @@ bot.on('message:text', async (ctx) => {
     }
 
     if (isGroupChat(ctx)) {
-       const members = await db.query.groupMembers.findMany({
-         where: eq(groupMembers.chatId, ctx.chat.id)
-       });
-       if (members.length > 0) {
-         const memberList = members.map(m => m.username ? `@${m.username}` : m.firstName).join(', ');
-         text += `\n\n[Konteks Sistem: Ini adalah pesan di grup. Daftar anggota grup yang terekam: ${memberList}. Jika diminta menyapa, sebutkan username mereka dan berikan sapaan yang hangat/luwes.]`;
-         
-         const mentionedUsernames = (rawText.match(/@([a-zA-Z0-9_]+)/g) || []).map(u => u.slice(1).toLowerCase());
-         for (const username of mentionedUsernames) {
-           const member = members.find(m => m.username?.toLowerCase() === username);
-           if (member) {
-             const userMessages = await db.query.messages.findMany({
-               where: eq(messages.userId, member.userId),
-               orderBy: [desc(messages.timestamp)],
-               limit: 20,
-             });
-             if (userMessages.length > 0) {
-               const historyText = userMessages.map(m => m.content).reverse().join('\n- ');
-               text += `\n\n[Konteks Sistem: Pengguna me-mention @${username}. Berikut adalah 20 pesan terakhir dari @${username} jika kamu diminta menganalisis karakternya atau membalas berdasarkan riwayatnya:\n- ${historyText}\n]`;
+       try {
+         const members = await db.query.groupMembers.findMany({
+           where: eq(groupMembers.chatId, ctx.chat.id)
+         });
+         if (members.length > 0) {
+           const memberList = members.map(m => m.username ? `@${m.username}` : m.firstName).join(', ');
+           text += `\n\n[Konteks Sistem: Ini adalah pesan di grup. Daftar anggota grup yang terekam: ${memberList}. Jika diminta menyapa, sebutkan username mereka dan berikan sapaan yang hangat/luwes.]`;
+           
+           const mentionedUsernames = (rawText.match(/@([a-zA-Z0-9_]+)/g) || []).map(u => u.slice(1).toLowerCase());
+           for (const username of mentionedUsernames) {
+             const member = members.find(m => m.username?.toLowerCase() === username);
+             if (member) {
+               const userMessages = await db.query.messages.findMany({
+                 where: eq(messages.userId, member.userId),
+                 orderBy: [desc(messages.timestamp)],
+                 limit: 20,
+               });
+               if (userMessages.length > 0) {
+                 const historyText = userMessages.map(m => m.content).reverse().join('\n- ');
+                 text += `\n\n[Konteks Sistem: Pengguna me-mention @${username}. Berikut adalah 20 pesan terakhir dari @${username} jika kamu diminta menganalisis karakternya atau membalas berdasarkan riwayatnya:\n- ${historyText}\n]`;
+               }
              }
            }
          }
+       } catch (e) {
+         console.warn('Gagal memuat konteks anggota grup (mungkin tabel group_members belum ada):', e);
        }
     }
 
