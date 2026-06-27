@@ -113,9 +113,15 @@ const defaultAdminConfig: AdminConfig = {
 };
 
 export async function getAdminConfig(): Promise<AdminConfig> {
-  const row = await db.query.settings.findFirst({
-    where: eq(settings.key, ADMIN_CONFIG_KEY),
-  });
+  let row;
+  try {
+    row = await db.query.settings.findFirst({
+      where: eq(settings.key, ADMIN_CONFIG_KEY),
+    });
+  } catch (e) {
+    console.warn('Failed to fetch settings from DB (table might be missing), using default:', e);
+    return defaultAdminConfig;
+  }
 
   if (!row?.value) {
     return defaultAdminConfig;

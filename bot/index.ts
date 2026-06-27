@@ -1958,18 +1958,23 @@ bot.on('message:document', async (ctx) => {
     return;
   }
 
-  await processIncomingDocument(ctx, {
-    fileId: document.file_id,
-    fileName,
-    mimeType,
-    userFacingType:
-      mimeType === 'application/pdf'
-        ? 'pdf'
-        : mimeType.startsWith('image/')
-          ? 'image'
-          : 'document',
-    prompt: normalizeIncomingText(caption, ctx) || undefined,
-  });
+  try {
+    await processIncomingDocument(ctx, {
+      fileId: document.file_id,
+      fileName,
+      mimeType,
+      userFacingType:
+        mimeType === 'application/pdf'
+          ? 'pdf'
+          : mimeType.startsWith('image/')
+            ? 'image'
+            : 'document',
+      prompt: normalizeIncomingText(caption, ctx) || undefined,
+    });
+  } catch (error) {
+    console.error('Error processing document:', error);
+    await replySafely(ctx, 'Maaf, terjadi kesalahan internal saat memproses dokumen ini.');
+  }
 });
 
 bot.on('message:photo', async (ctx) => {
@@ -1987,13 +1992,18 @@ bot.on('message:photo', async (ctx) => {
     return;
   }
 
-  await processIncomingDocument(ctx, {
-    fileId: photo.file_id,
-    fileName: `photo-${photo.file_unique_id}.jpg`,
-    mimeType: 'image/jpeg',
-    userFacingType: 'image',
-    prompt: normalizeIncomingText(caption, ctx) || undefined,
-  });
+  try {
+    await processIncomingDocument(ctx, {
+      fileId: photo.file_id,
+      fileName: `photo-${photo.file_unique_id}.jpg`,
+      mimeType: 'image/jpeg',
+      userFacingType: 'image',
+      prompt: normalizeIncomingText(caption, ctx) || undefined,
+    });
+  } catch (error) {
+    console.error('Error processing photo:', error);
+    await replySafely(ctx, 'Maaf, terjadi kesalahan internal saat memproses gambar ini.');
+  }
 });
 
 bot.on('message:text', async (ctx) => {
