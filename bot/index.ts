@@ -119,7 +119,7 @@ function startProcessingIndicator(ctx: any, mode: ProcessingIndicatorMode) {
     }
 
     try {
-      await ctx.api.callApi('sendRichMessageDraft', {
+      await ctx.api.raw.sendRichMessageDraft({
         chat_id: ctx.chat.id,
         message_thread_id: typeof ctx.message?.message_thread_id === 'number' ? ctx.message.message_thread_id : undefined,
         draft_id: richDraftId,
