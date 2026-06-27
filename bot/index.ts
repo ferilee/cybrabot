@@ -1868,8 +1868,6 @@ bot.command('admin_knowledge_delete', async (ctx) => {
   await replySafely(ctx, `Knowledge <b>${raw}</b> dihapus.`);
 });
 
-import { saveWebSkill, deleteWebSkill } from '../lib/web-skills';
-
 bot.command('admin_skill_add', async (ctx) => {
   if (!(await requireOwner(ctx))) {
     return;
