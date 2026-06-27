@@ -13,11 +13,12 @@ import {
   StandardFonts,
   rgb,
 } from 'pdf-lib';
+import * as XLSX from 'xlsx';
 
 const EXPORT_DIR = '/tmp/cybrabot-exports';
 mkdirSync(EXPORT_DIR, { recursive: true });
 
-export type ExportFormat = 'md' | 'pdf' | 'docx';
+export type ExportFormat = 'md' | 'pdf' | 'docx' | 'xlsx';
 
 export type ExportRequest = {
   format: ExportFormat;
@@ -44,13 +45,14 @@ export function detectDocumentExportRequest(text: string): ExportRequest | null 
   const wantsMd = /\bmarkdown\b|\bmd\b/.test(lower);
   const wantsPdf = /\bpdf\b/.test(lower);
   const wantsDocx = /\bdocx\b|\bword\b/.test(lower);
+  const wantsXlsx = /\bxlsx\b|\bexcel\b/.test(lower);
   const asksToCreate = /(buatkan|bikinkan|generate|buat|tolong buat|tolong bikin|jadikan|ubah jadi|convert|ekspor|export)/.test(lower);
 
-  if (!asksToCreate || (!wantsMd && !wantsPdf && !wantsDocx)) {
+  if (!asksToCreate || (!wantsMd && !wantsPdf && !wantsDocx && !wantsXlsx)) {
     return null;
   }
 
-  const format: ExportFormat = wantsMd ? 'md' : wantsPdf ? 'pdf' : 'docx';
+  const format: ExportFormat = wantsMd ? 'md' : wantsPdf ? 'pdf' : wantsDocx ? 'docx' : 'xlsx';
   const cleanedPrompt = text
     .replace(/\/?[a-z]*dokumen(@\w+)?/gi, '')
     .replace(/\b(format|dalam bentuk|sebagai)\b/gi, '')
@@ -59,6 +61,8 @@ export function detectDocumentExportRequest(text: string): ExportRequest | null 
     .replace(/\bpdf\b/gi, '')
     .replace(/\bdocx\b/gi, '')
     .replace(/\bword\b/gi, '')
+    .replace(/\bxlsx\b/gi, '')
+    .replace(/\bexcel\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -218,6 +222,33 @@ export async function createPdfDocument(title: string, content: string) {
   return Buffer.from(await pdfDoc.save());
 }
 
+export async function createXlsxDocument(title: string, content: string) {
+  const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
+  const data: any[][] = [[title], []];
+  
+  for (const line of lines) {
+    if (line.includes('|') && !line.includes('---')) {
+      const cells = line.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      data.push(cells);
+    } else if (!line.includes('---')) {
+      if (line.startsWith('#')) {
+        data.push([]);
+        data.push([line.replace(/^#+\s/, '')]);
+      } else if (line.startsWith('- ')) {
+        data.push(['', line.slice(2)]);
+      } else {
+        data.push([line]);
+      }
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  XLSX.utils.book_append_sheet(wb, ws, 'Export');
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  return Buffer.from(buffer);
+}
+
 export async function materializeExportFile(title: string, content: string, format: ExportFormat) {
   const fileName = `${slugify(title)}.${format}`;
   const outputPath = join(EXPORT_DIR, `${Date.now()}-${crypto.randomUUID()}-${fileName}`);
@@ -226,7 +257,9 @@ export async function materializeExportFile(title: string, content: string, form
       ? Buffer.from(content, 'utf-8')
       : format === 'pdf'
         ? await createPdfDocument(title, content)
-        : await createDocxDocument(title, content);
+        : format === 'docx'
+          ? await createDocxDocument(title, content)
+          : await createXlsxDocument(title, content);
 
   await Bun.write(outputPath, buffer);
 

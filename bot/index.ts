@@ -114,7 +114,7 @@ function startProcessingIndicator(ctx: any, mode: ProcessingIndicatorMode) {
   };
 
   const streamDraft = async () => {
-    if (stopped || richDraftDisabled || !richDraftId || !isPrivateChat(ctx)) {
+    if (stopped || richDraftDisabled || !richDraftId) {
       return;
     }
 
@@ -699,7 +699,9 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
       latencyMs: answer.latencyMs,
     });
     
-    if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
+    if (answer.text.length > 800) {
+      await replySafely(ctx, `<blockquote expandable>\n${formatTelegramRichText(answer.text)}\n</blockquote>`);
+    } else if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
       await replySafelyMarkdown(ctx, answer.text);
     } else {
       await replySafely(ctx, formatTelegramRichText(answer.text));
@@ -1231,7 +1233,7 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
   }
 }
 
-async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx', titleOverride?: string) {
+async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx' | 'xlsx', titleOverride?: string) {
   const startedAt = Date.now();
   const userId = ctx.from.id;
   const stopIndicator = startProcessingIndicator(ctx, 'export');
@@ -1240,7 +1242,7 @@ async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx', ti
   if (!latestBotMessage || latestBotMessage.role !== 'bot' || !latestBotMessage.content?.trim()) {
     await replySafely(
       ctx,
-      'Belum ada jawaban bot yang bisa diekspor. Kirim pertanyaan dulu, lalu pakai <b>/simpan md</b>, <b>/simpan pdf</b>, atau <b>/simpan docx</b>.'
+      'Belum ada jawaban bot yang bisa diekspor. Kirim pertanyaan dulu, lalu pakai <b>/simpan md</b>, <b>/simpan pdf</b>, <b>/simpan docx</b>, atau <b>/simpan xlsx</b>.'
     );
     return;
   }
@@ -1382,7 +1384,9 @@ async function handleExplicitSkillCommand(
       reach: response.reach,
     });
 
-    const telegramReply = formatTelegramRichText(response.reply);
+    const telegramReply = response.reply.length > 800
+      ? `<blockquote expandable>\n${formatTelegramRichText(response.reply)}\n</blockquote>`
+      : formatTelegramRichText(response.reply);
     await replySafely(ctx, telegramReply);
 
     if (response.exportFile) {
@@ -1566,13 +1570,13 @@ bot.command('simpan', async (ctx) => {
 
   const raw = ctx.message!.text.replace(/^\/simpan(@\w+)?/i, '').trim();
   const [formatRaw, ...titleParts] = raw.split(/\s+/);
-  const format = (formatRaw || '').toLowerCase() as 'md' | 'pdf' | 'docx';
+  const format = (formatRaw || '').toLowerCase() as 'md' | 'pdf' | 'docx' | 'xlsx';
   const title = titleParts.join(' ').trim();
 
-  if (!format || !['md', 'pdf', 'docx'].includes(format)) {
+  if (!format || !['md', 'pdf', 'docx', 'xlsx'].includes(format)) {
     await replySafely(
       ctx,
-      'Format: <b>/simpan [md|pdf|docx] [judul opsional]</b>\n' +
+      'Format: <b>/simpan [md|pdf|docx|xlsx] [judul opsional]</b>\n' +
       'Contoh: <b>/simpan pdf kondisi-indonesia</b>'
     );
     return;
@@ -2220,7 +2224,9 @@ bot.on('message:text', async (ctx) => {
       reach: response.reach,
     });
     failureStage = 'reply_ai';
-    if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
+    if (response.reply.length > 800) {
+      await replySafely(ctx, `<blockquote expandable>\n${formatTelegramRichText(response.reply)}\n</blockquote>`);
+    } else if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
       await replySafelyMarkdown(ctx, response.reply);
     } else {
       await replySafely(ctx, formatTelegramRichText(response.reply));

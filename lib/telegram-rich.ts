@@ -582,14 +582,14 @@ export function renderTelegramHtmlFallback(input: string) {
 export function getTelegramDraftStatusHtml(mode: TelegramDraftMode) {
   switch (mode) {
     case 'document':
-      return '<tg-thinking>Cybra sedang membaca dokumen dan menyusun jawaban...</tg-thinking>';
+      return '<tg-thinking>Dianyssa sedang membaca dokumen dan menyusun jawaban...</tg-thinking>';
     case 'photo':
-      return '<tg-thinking>Cybra sedang menganalisis gambar dan menyiapkan respons...</tg-thinking>';
+      return '<tg-thinking>Dianyssa sedang menganalisis gambar dan menyiapkan respons...</tg-thinking>';
     case 'export':
-      return '<tg-thinking>Cybra sedang menyiapkan file ekspor...</tg-thinking>';
+      return '<tg-thinking>Dianyssa sedang menyiapkan file ekspor...</tg-thinking>';
     case 'text':
     default:
-      return '<tg-thinking>Cybra sedang menyusun jawaban...</tg-thinking>';
+      return '<tg-thinking>Dianyssa sedang mengetik/memproses ...</tg-thinking>';
   }
 }
 
