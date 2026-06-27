@@ -474,9 +474,15 @@ function shouldHandleGroupText(ctx: any, text: string) {
     return false;
   }
 
-  // Di grup, pesan dari user yang diizinkan diproses langsung supaya bot tetap responsif.
-  // Mention/reply tetap didukung, tetapi tidak lagi wajib untuk user yang sudah di-whitelist.
-  return true;
+  if (ctx.message?.reply_to_message?.from?.id === ctx.me?.id) {
+    return true;
+  }
+
+  if (hasBotMention(text, ctx)) {
+    return true;
+  }
+
+  return false;
 }
 
 function shouldHandleGroupMedia(ctx: any, caption = '') {
@@ -488,7 +494,15 @@ function shouldHandleGroupMedia(ctx: any, caption = '') {
     return false;
   }
 
-  return true;
+  if (ctx.message?.reply_to_message?.from?.id === ctx.me?.id) {
+    return true;
+  }
+
+  if (hasBotMention(caption, ctx)) {
+    return true;
+  }
+
+  return false;
 }
 
 function normalizeIncomingText(text: string, ctx: any) {
