@@ -7,6 +7,10 @@ import {
   Packer,
   Paragraph,
   TextRun,
+  Footer,
+  PageNumber,
+  AlignmentType,
+  TabStopType,
 } from 'docx';
 import {
   PDFDocument,
@@ -37,8 +41,11 @@ export function getExportProcessingMessage(format: ExportFormat) {
 type ParsedLine =
   | { type: 'heading1'; text: string }
   | { type: 'heading2'; text: string }
+  | { type: 'heading3'; text: string }
+  | { type: 'heading4'; text: string }
   | { type: 'bullet'; text: string }
-  | { type: 'paragraph'; text: string };
+  | { type: 'paragraph'; text: string }
+  | { type: 'keyvalue'; key: string; value: string };
 
 export function detectDocumentExportRequest(text: string): ExportRequest | null {
   const lower = text.toLowerCase();
@@ -95,16 +102,47 @@ function slugify(input: string) {
     .slice(0, 60) || 'dokumen-cybrabot';
 }
 
+function cleanMarkdown(text: string) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/\$\$(.*?)\$\$/g, '$1')
+    .replace(/\$(.*?)\$/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/`(.*?)`/g, '$1');
+}
+
 function parseStructuredText(content: string): ParsedLine[] {
   return content
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line): ParsedLine => {
-      if (line.startsWith('# ')) return { type: 'heading1', text: line.slice(2).trim() };
-      if (line.startsWith('## ')) return { type: 'heading2', text: line.slice(3).trim() };
-      if (line.startsWith('- ')) return { type: 'bullet', text: line.slice(2).trim() };
-      return { type: 'paragraph', text: line };
+      let isBullet = false;
+      let text = line;
+      let type: ParsedLine['type'] = 'paragraph';
+      if (line.startsWith('# ')) { type = 'heading1'; text = line.slice(2).trim(); }
+      else if (line.startsWith('## ')) { type = 'heading2'; text = line.slice(3).trim(); }
+      else if (line.startsWith('### ')) { type = 'heading3'; text = line.slice(4).trim(); }
+      else if (line.startsWith('#### ')) { type = 'heading4'; text = line.slice(5).trim(); }
+      else if (line.startsWith('- ')) { isBullet = true; text = line.slice(2).trim(); }
+      else if (line.startsWith('* ')) { isBullet = true; text = line.slice(2).trim(); }
+      
+      let cleanedText = cleanMarkdown(text);
+      if (type === 'paragraph' || isBullet) {
+        let kvMatch = cleanedText.match(/^([a-zA-Z0-9\s/_-]{2,35}?)\s*:\s*(.+)$/);
+        if (kvMatch) {
+          return {
+            type: 'keyvalue',
+            key: (isBullet ? '• ' : '') + kvMatch[1].trim(),
+            value: kvMatch[2].trim(),
+          } as ParsedLine;
+        }
+      }
+      
+      if (isBullet) type = 'bullet';
+      return { type, text: cleanedText } as ParsedLine;
     });
 }
 
@@ -113,6 +151,27 @@ export async function createDocxDocument(title: string, content: string) {
   const doc = new Document({
     sections: [
       {
+        properties: {},
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new TextRun("Halaman "),
+                  new TextRun({
+                    children: [PageNumber.CURRENT],
+                  }),
+                  new TextRun(" dari "),
+                  new TextRun({
+                    children: [PageNumber.TOTAL_PAGES],
+                  }),
+                  new TextRun(" • Dibuat dengan ❤️ oleh Dianyssa"),
+                ],
+              }),
+            ],
+          }),
+        },
         children: [
           new Paragraph({
             text: title,
@@ -131,10 +190,31 @@ export async function createDocxDocument(title: string, content: string) {
                 heading: HeadingLevel.HEADING_2,
               });
             }
+            if (line.type === 'heading3') {
+              return new Paragraph({
+                text: line.text,
+                heading: HeadingLevel.HEADING_3,
+              });
+            }
+            if (line.type === 'heading4') {
+              return new Paragraph({
+                text: line.text,
+                heading: HeadingLevel.HEADING_4,
+              });
+            }
             if (line.type === 'bullet') {
               return new Paragraph({
                 text: line.text,
                 bullet: { level: 0 },
+              });
+            }
+            if (line.type === 'keyvalue') {
+              return new Paragraph({
+                tabStops: [{ type: TabStopType.LEFT, position: 2800 }],
+                children: [
+                  new TextRun({ text: line.key + ' :', bold: true }),
+                  new TextRun({ text: '\t' + line.value }),
+                ],
               });
             }
             return new Paragraph({
@@ -221,6 +301,28 @@ export async function createPdfDocument(title: string, content: string) {
       drawLine(line.text, { bold: true, size: 13 });
       continue;
     }
+    if (line.type === 'heading3') {
+      drawLine(line.text, { bold: true, size: 12 });
+      continue;
+    }
+    if (line.type === 'heading4') {
+      drawLine(line.text, { bold: true, size: 11 });
+      continue;
+    }
+
+    if (line.type === 'keyvalue') {
+      ensureSpace();
+      drawLine(line.key + ' :', { bold: true });
+      y += 17; // rewind Y since drawLine moved it down
+      const valueX = margin + 140;
+      const wrapped = wrapText(line.value, 70);
+      for (let i = 0; i < wrapped.length; i++) {
+        page.drawText(wrapped[i], { x: valueX, y, size: 11, font, color: rgb(0.1, 0.1, 0.1) });
+        y -= 17;
+        if (i < wrapped.length - 1) ensureSpace();
+      }
+      continue;
+    }
 
     const prefix = line.type === 'bullet' ? '• ' : '';
     const wrapped = wrapText(`${prefix}${line.text}`);
@@ -229,6 +331,20 @@ export async function createPdfDocument(title: string, content: string) {
       drawLine(wrappedLine, { indent: line.type === 'bullet' ? 10 : 0 });
     }
     y -= 4;
+  }
+
+  const pages = pdfDoc.getPages();
+  for (let i = 0; i < pages.length; i++) {
+    const pageToDraw = pages[i];
+    const footerText = `Halaman ${i + 1} / ${pages.length}  -  Dibuat dengan <3 oleh Dianyssa`;
+    const textWidth = font.widthOfTextAtSize(footerText, 9);
+    pageToDraw.drawText(footerText, {
+      x: (pageToDraw.getWidth() - textWidth) / 2,
+      y: 30,
+      size: 9,
+      font: font,
+      color: rgb(0.4, 0.4, 0.4),
+    });
   }
 
   return Buffer.from(await pdfDoc.save());
