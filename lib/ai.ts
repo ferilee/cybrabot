@@ -78,6 +78,20 @@ export type SkillResponseResult = {
   fallback: boolean;
 };
 
+export async function generateEmbedding(text: string): Promise<number[]> {
+  try {
+    const response = await client.models.embedContent({
+      model: 'text-embedding-004',
+      contents: text,
+    });
+    return response.embeddings?.[0]?.values || [];
+  } catch (error) {
+    console.error('Embedding error:', error);
+    return [];
+  }
+}
+
+
 const intentInstructions = `Determine the intent of the following user message for a Telegram bot named @DianyssaBot.
 The bot is Dianyssa, an empathetic, smart, and futuristic AI companion.
 Respond with ONLY ONE word: 'technical' if it's about math, code, or admin tasks; otherwise 'casual'.`;
@@ -366,7 +380,7 @@ export async function generateResponse(
   preferences: UserPreferences = {},
   adminConfig?: Pick<AdminConfig, 'personaOverride' | 'models'>
 ): Promise<GenerationResult> {
-  const knowledge = getKnowledgeContext(message);
+  const knowledge = await getKnowledgeContext(message);
   const model = resolveModel(adminConfig?.models.chat, chatModel);
   try {
     const result = await generateText(
@@ -434,7 +448,7 @@ export async function generateTechnicalResponse(
   preferences: UserPreferences = {},
   adminConfig?: Pick<AdminConfig, 'personaOverride' | 'models'>
 ): Promise<GenerationResult> {
-  const knowledge = getKnowledgeContext(message);
+  const knowledge = await getKnowledgeContext(message);
   const model = resolveModel(adminConfig?.models.chat, chatModel);
   try {
     const result = await generateText(
@@ -546,7 +560,7 @@ export async function generateSkillResponse(input: {
   surface?: 'telegram' | 'web';
   adminConfig?: Pick<AdminConfig, 'personaOverride' | 'models'>;
 }): Promise<SkillResponseResult> {
-  const knowledge = getKnowledgeContext(input.message);
+  const knowledge = await getKnowledgeContext(input.message);
   const history = input.history || [];
   const model = resolveModel(input.adminConfig?.models.chat, chatModel);
   const surface = input.surface || 'telegram';

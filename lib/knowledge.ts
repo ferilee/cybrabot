@@ -1,5 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { searchVectorKnowledge, addVectorDocument, deleteVectorDocument } from './qdrant';
 
 type KnowledgeDocument = {
   id: string;
@@ -61,7 +62,14 @@ export function reloadKnowledgeDocuments() {
   return knowledgeDocuments;
 }
 
-export function retrieveKnowledge(query: string, limit = 2) {
+export async function retrieveKnowledge(query: string, limit = 2) {
+  // Try Qdrant semantic search first
+  const vectorResults = await searchVectorKnowledge(query, limit);
+  if (vectorResults.length > 0) {
+    return vectorResults;
+  }
+
+  // Fallback to token matching
   const queryTokens = new Set(tokenize(query));
 
   if (!queryTokens.size) {
@@ -91,11 +99,15 @@ export function listKnowledgeDocuments() {
   }));
 }
 
-export function saveKnowledgeDocument(input: { id?: string; title: string; content: string }) {
+export async function saveKnowledgeDocument(input: { id?: string; title: string; content: string }) {
   const id = input.id || slugify(input.title);
   const filePath = join(knowledgeDir, `${id}.md`);
   writeFileSync(filePath, toMarkdown(input.title, input.content), 'utf8');
   reloadKnowledgeDocuments();
+  
+  // Update Qdrant
+  await addVectorDocument(id, input.title, input.content);
+  
   return {
     id,
     title: input.title,
@@ -103,14 +115,17 @@ export function saveKnowledgeDocument(input: { id?: string; title: string; conte
   };
 }
 
-export function deleteKnowledgeDocument(id: string) {
+export async function deleteKnowledgeDocument(id: string) {
   const filePath = join(knowledgeDir, `${id}.md`);
   rmSync(filePath, { force: true });
   reloadKnowledgeDocuments();
+  
+  // Update Qdrant
+  await deleteVectorDocument(id);
 }
 
-export function formatKnowledgeContext(query: string) {
-  const matches = retrieveKnowledge(query);
+export async function formatKnowledgeContext(query: string) {
+  const matches = await retrieveKnowledge(query);
 
   if (!matches.length) {
     return '';
@@ -120,8 +135,8 @@ export function formatKnowledgeContext(query: string) {
   return `Pengetahuan lokal yang relevan:\n${sections.join('\n\n')}\n\n`;
 }
 
-export function getKnowledgeContext(query: string) {
-  const matches = retrieveKnowledge(query);
+export async function getKnowledgeContext(query: string) {
+  const matches = await retrieveKnowledge(query);
 
   if (!matches.length) {
     return {

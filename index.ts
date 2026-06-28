@@ -1,9 +1,12 @@
 import { serve } from 'bun';
 import app from './api';
 import { bot } from './bot';
+import { initQdrant } from './lib/qdrant';
 import 'dotenv/config';
 
 const port = Number(process.env.PORT || 4129);
+
+initQdrant();
 
 if (!process.env.TELEGRAM_BOT_TOKEN) {
   console.warn("⚠️ TELEGRAM_BOT_TOKEN is missing! Bot features will not work.");

@@ -246,19 +246,19 @@ describe('backend utilities', () => {
     }
   });
 
-  test('knowledge CRUD and retrieval work', () => {
-    const item = saveKnowledgeDocument({
+  test('knowledge CRUD and retrieval work', async () => {
+    const item = await saveKnowledgeDocument({
       id: 'trigonometri',
       title: 'Trigonometri Dasar',
       content: 'Sin, cos, dan tan adalah perbandingan sisi pada segitiga siku-siku.',
     });
     expect(item.id).toBe('trigonometri');
     expect(listKnowledgeDocuments()).toHaveLength(1);
-    expect(retrieveKnowledge('jelaskan sin cos tan', 1)[0]?.id).toBe('trigonometri');
-    expect(formatKnowledgeContext('sin cos')).toContain('Trigonometri Dasar');
-    expect(getKnowledgeContext('sin cos').matches).toContain('trigonometri');
+    expect((await retrieveKnowledge('jelaskan sin cos tan', 1))[0]?.id).toBe('trigonometri');
+    expect(await formatKnowledgeContext('sin cos')).toContain('Trigonometri Dasar');
+    expect((await getKnowledgeContext('sin cos')).matches).toContain('trigonometri');
 
-    deleteKnowledgeDocument('trigonometri');
+    await deleteKnowledgeDocument('trigonometri');
     expect(listKnowledgeDocuments()).toHaveLength(0);
   });
 
@@ -372,7 +372,7 @@ describe('backend utilities', () => {
 
   test('local tools respond for math, caption, announcement, faq, and self describe', async () => {
     const config = await getAdminConfig();
-    saveKnowledgeDocument({
+    await saveKnowledgeDocument({
       id: 'mgmp',
       title: 'MGMP',
       content: 'MGMP adalah forum guru mata pelajaran.',
@@ -528,7 +528,7 @@ describe('skill and web chat routing', () => {
     let capturedSkillInstructions = '';
     let capturedExternalContext = '';
 
-    saveKnowledgeDocument({
+    await saveKnowledgeDocument({
       id: 'trigonometri',
       title: 'Trigonometri Dasar',
       content: 'Trigonometri mempelajari sin, cos, tan, identitas dasar, dan hubungan sudut pada segitiga maupun lingkaran.',
