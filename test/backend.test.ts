@@ -147,7 +147,7 @@ describe('backend utilities', () => {
     expect(formatTelegramRichText('```math\nsin x = a/b\n```')).toContain('<tg-math-block>\\sin x = \\frac{a}{b}</tg-math-block>');
     expect(formatTelegramRichText('- [x] selesai\n- [ ] belum')).toContain('☑ selesai');
     expect(formatTelegramRichText('---')).toContain('<hr/>');
-    expect(getTelegramDraftStatusHtml('text')).toContain('<tg-thinking>');
+    expect(getTelegramDraftStatusHtml('text')).toContain('<blockquote>');
     expect(getTelegramDraftStatusHtml('document')).toContain('dokumen');
     expect(getTelegramDraftStatusHtml('photo')).toContain('gambar');
     expect(getTelegramDraftStatusHtml('export')).toContain('ekspor');

@@ -707,9 +707,7 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
       latencyMs: answer.latencyMs,
     });
     
-    if (answer.text.length > 800) {
-      await replySafely(ctx, `<blockquote expandable>\n${renderTelegramMessageContent(answer.text)}\n</blockquote>`);
-    } else if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
+    if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
       await replySafelyMarkdown(ctx, answer.text);
     } else {
       await replySafely(ctx, renderTelegramMessageContent(answer.text));
@@ -1392,9 +1390,7 @@ async function handleExplicitSkillCommand(
       reach: response.reach,
     });
 
-    if (response.reply.length > 800) {
-      await replySafely(ctx, `<blockquote expandable>\n${renderTelegramMessageContent(response.reply)}\n</blockquote>`);
-    } else if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
+    if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
       await replySafelyMarkdown(ctx, response.reply);
     } else {
       await replySafely(ctx, renderTelegramMessageContent(response.reply));
@@ -2236,9 +2232,7 @@ bot.on('message:text', async (ctx) => {
       reach: response.reach,
     });
     failureStage = 'reply_ai';
-    if (response.reply.length > 800) {
-      await replySafely(ctx, `<blockquote expandable>\n${renderTelegramMessageContent(response.reply)}\n</blockquote>`);
-    } else if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
+    if (process.env.TELEGRAM_RICH_MESSAGES === 'true') {
       await replySafelyMarkdown(ctx, response.reply);
     } else {
       await replySafely(ctx, renderTelegramMessageContent(response.reply));
