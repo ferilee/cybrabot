@@ -312,7 +312,7 @@ export function formatTelegramRichText(input: string) {
     if (!quoteLines.length) {
       return;
     }
-    output.push(`<blockquote>${quoteLines.map((line) => formatInlineTelegramRichText(line.trim())).join('\n')}</blockquote>`);
+    output.push(`<blockquote expandable>${quoteLines.map((line) => formatInlineTelegramRichText(line.trim())).join('\n')}</blockquote>`);
     quoteLines.length = 0;
   };
 
@@ -421,8 +421,8 @@ export function formatTelegramRichText(input: string) {
       continue;
     }
 
-    const quote = trimmed.match(/^>\s?(.*)$/);
-    if (quote?.[1]) {
+    const quote = trimmed.match(/^>\s*(.*)$/);
+    if (quote) {
       flushParagraph(paragraphLines, output);
       flushList();
       quoteLines.push(quote[1]);
@@ -478,7 +478,7 @@ export function simplifyTelegramRichContent(input: string) {
   let simplified = normalized
     .replace(/<h[1-6]>([\s\S]*?)<\/h[1-6]>/gi, '<b>$1</b>\n\n')
     .replace(/<p>([\s\S]*?)<\/p>/gi, '$1\n\n')
-    .replace(/<blockquote>([\s\S]*?)<\/blockquote>/gi, '<i>$1</i>\n\n')
+    .replace(/<blockquote(?:\s+expandable)?>([\s\S]*?)<\/blockquote>/gi, '<i>$1</i>\n\n')
     .replace(/<(?:ul|ol)>\s*/gi, '')
     .replace(/\s*<\/(?:ul|ol)>/gi, '\n')
     .replace(/<li>([\s\S]*?)<\/li>/gi, '• $1\n')
