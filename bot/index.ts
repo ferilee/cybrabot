@@ -603,6 +603,8 @@ function inferMimeTypeFromName(fileName: string) {
   if (lower.endsWith('.pdf')) return 'application/pdf';
   if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (lower.endsWith('.md')) return 'text/markdown';
+  if (lower.endsWith('.txt')) return 'text/plain';
   if (lower.endsWith('.png')) return 'image/png';
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
   if (lower.endsWith('.webp')) return 'image/webp';
@@ -613,6 +615,8 @@ function extensionFromMimeType(mimeType: string) {
   if (mimeType === 'application/pdf') return 'pdf';
   if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
   if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'xlsx';
+  if (mimeType === 'text/markdown' || mimeType === 'text/x-markdown') return 'md';
+  if (mimeType === 'text/plain') return 'txt';
   if (mimeType === 'image/png') return 'png';
   if (mimeType === 'image/webp') return 'webp';
   return 'jpg';
@@ -1167,15 +1171,36 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
 
   let outputPath = '';
   try {
-    const draft = exportFromConversation
-      ? {
-          title: 'Percakapan CybraFeriBot',
-          text: buildConversationExportContent(requestText, history),
-          model: 'local',
-          latencyMs: 0,
-          fallback: false,
-        }
-      : await generateDocumentDraft(exportRequest.prompt, history, preferences, adminConfig);
+    const repliedMatch = requestText.match(/\[Konteks pesan yang di-reply:\n([\s\S]+?)\n\]/);
+    const cleanedRequest = exportRequest.prompt
+      .replace(/\[Konteks pesan yang di-reply:[\s\S]*?\]/, '')
+      .replace(/\[Konteks Sistem:[\s\S]*?\]/g, '')
+      .trim();
+    const isDirectConversion = repliedMatch && cleanedRequest.length < 50 && 
+      !cleanedRequest.toLowerCase().includes('tambah') && 
+      !cleanedRequest.toLowerCase().includes('ubah') && 
+      !cleanedRequest.toLowerCase().includes('ringkas');
+
+    let draft;
+    if (exportFromConversation) {
+      draft = {
+        title: 'Percakapan CybraFeriBot',
+        text: buildConversationExportContent(requestText, history),
+        model: 'local',
+        latencyMs: 0,
+        fallback: false,
+      };
+    } else if (isDirectConversion) {
+      draft = {
+        title: 'Dokumen',
+        text: repliedMatch[1],
+        model: 'local',
+        latencyMs: 0,
+        fallback: false,
+      };
+    } else {
+      draft = await generateDocumentDraft(exportRequest.prompt, history, preferences, adminConfig);
+    }
 
     const exported = await materializeExportFile(draft.title || exportRequest.title, draft.text, exportRequest.format);
     outputPath = exported.outputPath;
@@ -1958,10 +1983,11 @@ bot.on('message:document', async (ctx) => {
       mimeType !== 'application/pdf' &&
       !mimeType.startsWith('image/') &&
       mimeType !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' &&
-      mimeType !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      mimeType !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' &&
+      !mimeType.startsWith('text/')
     )
   ) {
-    await replySafely(ctx, 'Saat ini saya hanya mendukung file <b>PDF</b>, <b>gambar</b>, <b>DOCX</b>, atau <b>XLSX</b>.');
+    await replySafely(ctx, 'Saat ini saya hanya mendukung file <b>PDF</b>, <b>gambar</b>, <b>DOCX</b>, <b>XLSX</b>, atau <b>MD/TXT</b>.');
     return;
   }
   if (fileSize > MAX_DOCUMENT_BYTES) {

@@ -167,7 +167,19 @@ function wrapText(text: string, maxChars = 95) {
   return lines;
 }
 
+function sanitizeForWinAnsi(text: string) {
+  return text
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/[\u2022\u25E6\u2043\u2219]/g, '-')
+    .replace(/[^\x00-\xFF]/g, '');
+}
+
 export async function createPdfDocument(title: string, content: string) {
+  const safeTitle = sanitizeForWinAnsi(title);
+  const safeContent = sanitizeForWinAnsi(content);
   const pdfDoc = await PDFDocument.create();
   let page = pdfDoc.addPage([595.28, 841.89]);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -196,10 +208,10 @@ export async function createPdfDocument(title: string, content: string) {
     y = page.getHeight() - margin;
   };
 
-  drawLine(title, { bold: true, size: 18 });
+  drawLine(safeTitle, { bold: true, size: 18 });
   y -= 4;
 
-  for (const line of parseStructuredText(content)) {
+  for (const line of parseStructuredText(safeContent)) {
     ensureSpace();
     if (line.type === 'heading1') {
       drawLine(line.text, { bold: true, size: 15 });

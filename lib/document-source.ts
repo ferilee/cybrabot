@@ -27,7 +27,7 @@ export function isPdfMimeType(mimeType: string) {
 }
 
 export function isTextDocumentMimeType(mimeType: string) {
-  return isDocxMimeType(mimeType) || isXlsxMimeType(mimeType);
+  return isDocxMimeType(mimeType) || isXlsxMimeType(mimeType) || mimeType === 'text/markdown' || mimeType === 'text/x-markdown' || mimeType === 'text/plain';
 }
 
 export async function extractTextFromPdf(filePath: string) {
@@ -92,6 +92,10 @@ export async function extractTextFromDocument(filePath: string, mimeType: string
     });
 
     return trimContent(sections.join('\n\n'));
+  }
+  if (mimeType === 'text/markdown' || mimeType === 'text/x-markdown' || mimeType === 'text/plain') {
+    const content = await Bun.file(filePath).text();
+    return trimContent(content);
   }
 
   return '';
