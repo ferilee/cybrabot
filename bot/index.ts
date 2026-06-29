@@ -679,6 +679,7 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
   const stopIndicator = startProcessingIndicator(ctx, 'document');
   const session = await getActiveDocumentSession(userId);
   const adminConfig = await getAdminConfig();
+  let stopAnimatedMsg: (() => Promise<void>) | null = null;
 
   try {
     if (!session) {
@@ -700,7 +701,7 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
 
     const exportRequest = detectDocumentExportRequest(question);
     if (exportRequest?.format === 'md') {
-      await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
+      stopAnimatedMsg = await startAnimatedProcessingMessage(ctx, await getRuntimeResponse('markdownProcessing'));
     }
 
     const answer = await answerQuestionAboutDocument(session, question, adminConfig.models.document);
@@ -755,6 +756,7 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
     return true;
   } finally {
     stopIndicator();
+    if (stopAnimatedMsg) await stopAnimatedMsg();
   }
 }
 
@@ -1060,7 +1062,7 @@ async function processIncomingDocument(ctx: any, input: {
   });
 
   const exportRequest = detectDocumentExportRequest(input.prompt || '');
-  await replySafely(
+  const stopAnimatedMsg = await startAnimatedProcessingMessage(
     ctx,
     exportRequest?.format === 'md'
       ? await getRuntimeResponse('markdownProcessing')
@@ -1145,6 +1147,7 @@ async function processIncomingDocument(ctx: any, input: {
     );
   } finally {
     stopIndicator();
+    if (stopAnimatedMsg) await stopAnimatedMsg();
     // local file is retained for resend support and cleaned up when the session is replaced or cleared
   }
 }
@@ -1162,7 +1165,7 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
   const adminConfig = await getAdminConfig();
   const exportFromConversation = shouldExportConversationContent(requestText);
 
-  await replySafely(
+  const stopAnimatedMsg = await startAnimatedProcessingMessage(
     ctx,
     exportRequest.format === 'md'
       ? await getRuntimeResponse('markdownProcessing')
@@ -1258,6 +1261,7 @@ async function processDocumentExport(ctx: any, requestText: string, startedAt: n
     return true;
   } finally {
     stopIndicator();
+    if (stopAnimatedMsg) await stopAnimatedMsg();
     if (outputPath) {
       cleanupExportFile(outputPath);
     }
@@ -1282,8 +1286,11 @@ async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx' | '
   const title = titleOverride?.trim() || 'Jawaban CybraFeriBot';
   let outputPath = '';
 
+  let stopAnimatedMsg: (() => Promise<void>) | null = null;
   if (format === 'md') {
-    await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
+    stopAnimatedMsg = await startAnimatedProcessingMessage(ctx, await getRuntimeResponse('markdownProcessing'));
+  } else {
+    stopAnimatedMsg = await startAnimatedProcessingMessage(ctx, getExportProcessingMessage(format));
   }
 
   try {
@@ -1320,6 +1327,7 @@ async function exportLatestBotAnswer(ctx: any, format: 'md' | 'pdf' | 'docx' | '
     await replySafely(ctx, await getRuntimeResponse('exportError'));
   } finally {
     stopIndicator();
+    if (stopAnimatedMsg) await stopAnimatedMsg();
     if (outputPath) {
       cleanupExportFile(outputPath);
     }
@@ -1357,6 +1365,7 @@ async function handleExplicitSkillCommand(
 
   const startedAt = Date.now();
   const stopIndicator = startProcessingIndicator(ctx, 'text');
+  let stopAnimatedMsg: (() => Promise<void>) | null = null;
   try {
     const rawText = ctx.message?.text || '';
     const text = rawText.replace(new RegExp(`^/${options.command}(@\\w+)?`, 'i'), '').trim();
@@ -1374,7 +1383,7 @@ async function handleExplicitSkillCommand(
     const exportRequest = detectDocumentExportRequest(text);
 
     if (exportRequest?.format === 'md') {
-      await replySafely(ctx, await getRuntimeResponse('markdownProcessing'));
+      stopAnimatedMsg = await startAnimatedProcessingMessage(ctx, await getRuntimeResponse('markdownProcessing'));
     }
 
     await logEvent('message.received', {
@@ -1445,6 +1454,7 @@ async function handleExplicitSkillCommand(
     });
   } finally {
     stopIndicator();
+    if (stopAnimatedMsg) await stopAnimatedMsg();
   }
 }
 
