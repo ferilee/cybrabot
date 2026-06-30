@@ -677,10 +677,10 @@ function renderProfileSetupPage(session: WebSession, options?: { error?: string;
           const formData = new FormData(form);
           const payload = Object.fromEntries(formData.entries());
 
-          payload.provinceName = province.options[province.selectedIndex]?.text || '';
-          payload.regencyName = regency.options[regency.selectedIndex]?.text || '';
-          payload.districtName = district.options[district.selectedIndex]?.text || '';
-          payload.villageName = village.options[village.selectedIndex]?.text || '';
+          payload.provinceName = (province.options[province.selectedIndex] || {}).text || '';
+          payload.regencyName = (regency.options[regency.selectedIndex] || {}).text || '';
+          payload.districtName = (district.options[district.selectedIndex] || {}).text || '';
+          payload.villageName = (village.options[village.selectedIndex] || {}).text || '';
 
           const response = await fetch('/api/profile/setup', {
             method: 'POST',
@@ -693,7 +693,7 @@ function renderProfileSetupPage(session: WebSession, options?: { error?: string;
             submitButton.disabled = false;
             return;
           }
-          const nextPath = document.getElementById('nextPath')?.value || '${escapeHtml('/chat')}';
+          const nextPath = (document.getElementById('nextPath') || {}).value || '${escapeHtml('/chat')}';
           window.location.href = nextPath.startsWith('/') ? nextPath : '${escapeHtml('/chat')}';
         });
 
@@ -3521,7 +3521,8 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
 
         function addMessage(role, content, meta = {}) {
           if (welcome) welcome.hidden = true;
-          document.getElementById('typingMessage')?.remove();
+          const typingMsg = document.getElementById('typingMessage');
+          if (typingMsg) typingMsg.remove();
           const row = document.createElement('article');
           row.className = 'message-row ' + role;
           const avatar = document.createElement('div');
@@ -3579,7 +3580,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
         }
 
         function closeSidebar() {
-          sidebar?.classList.remove('open');
+          if (sidebar) sidebar.classList.remove('open');
         }
 
         function openMobileSkillSheet() {
@@ -3613,7 +3614,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           introModalBackdrop.classList.add('open');
           introModalBackdrop.setAttribute('aria-hidden', 'false');
           if (mode === 'auto') {
-            sessionStorage.setItem(introAutoShownKey, '1');
+            try { sessionStorage.setItem(introAutoShownKey, '1'); } catch (e) {}
             introAutoCloseId = window.setTimeout(() => {
               hideIntroModal();
             }, 10000);
@@ -3622,19 +3623,23 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
 
         function scheduleIntroModal() {
           if (!introModalBackdrop) return;
-          if (sessionStorage.getItem(introAutoShownKey) === '1') return;
-          const stored = Number(sessionStorage.getItem(introTimerKey) || '');
-          const startedAt = Number.isFinite(stored) && stored > 0 ? stored : Date.now();
-          sessionStorage.setItem(introTimerKey, String(startedAt));
-          const remainingMs = Math.max(0, 180000 - (Date.now() - startedAt));
-          if (remainingMs === 0) {
-            showIntroModal('auto');
-            return;
+          try {
+            if (sessionStorage.getItem(introAutoShownKey) === '1') return;
+            const stored = Number(sessionStorage.getItem(introTimerKey) || '');
+            const startedAt = Number.isFinite(stored) && stored > 0 ? stored : Date.now();
+            sessionStorage.setItem(introTimerKey, String(startedAt));
+            const remainingMs = Math.max(0, 180000 - (Date.now() - startedAt));
+            if (remainingMs === 0) {
+              showIntroModal('auto');
+              return;
+            }
+            if (introTimerId) {
+              window.clearTimeout(introTimerId);
+            }
+            introTimerId = window.setTimeout(() => showIntroModal('auto'), remainingMs);
+          } catch (e) {
+            // ignore sessionStorage errors
           }
-          if (introTimerId) {
-            window.clearTimeout(introTimerId);
-          }
-          introTimerId = window.setTimeout(() => showIntroModal('auto'), remainingMs);
         }
 
         function selectSkill(skillId) {
@@ -3758,8 +3763,8 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             }
             applyQuota(data.quota);
             addMessage('assistant', data.reply || '', {
-              skillId: data.skill?.id,
-              skillTitle: data.skill?.title,
+              skillId: data.skill ? data.skill.id : undefined,
+              skillTitle: data.skill ? data.skill.title : undefined,
               route: data.route,
               intent: data.intent,
               intentModel: data.intentModel,
@@ -3768,7 +3773,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
               exportFile: data.exportFile,
             });
             updateHeaderMeta({
-              skillTitle: data.skill?.title,
+              skillTitle: data.skill ? data.skill.title : undefined,
               intent: data.intent,
               intentModel: data.intentModel,
               model: data.model,
@@ -3811,27 +3816,39 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           input.focus();
         });
 
-        mobileMenu?.addEventListener('click', () => {
-          openMobileSkillSheet();
-        });
-        mobileSkillSheetClose?.addEventListener('click', closeMobileSkillSheet);
-        mobileSkillSheetBackdrop?.addEventListener('click', (event) => {
-          if (event.target === mobileSkillSheetBackdrop) {
-            closeMobileSkillSheet();
-          }
-        });
-        introButton?.addEventListener('click', () => showIntroModal('manual'));
-        introModalClose?.addEventListener('click', hideIntroModal);
-        introModalBackdrop?.addEventListener('click', (event) => {
-          if (event.target === introModalBackdrop) {
-            hideIntroModal();
-          }
-        });
+        if (mobileMenu) {
+          mobileMenu.addEventListener('click', () => {
+            openMobileSkillSheet();
+          });
+        }
+        if (mobileSkillSheetClose) {
+          mobileSkillSheetClose.addEventListener('click', closeMobileSkillSheet);
+        }
+        if (mobileSkillSheetBackdrop) {
+          mobileSkillSheetBackdrop.addEventListener('click', (event) => {
+            if (event.target === mobileSkillSheetBackdrop) {
+              closeMobileSkillSheet();
+            }
+          });
+        }
+        if (introButton) {
+          introButton.addEventListener('click', () => showIntroModal('manual'));
+        }
+        if (introModalClose) {
+          introModalClose.addEventListener('click', hideIntroModal);
+        }
+        if (introModalBackdrop) {
+          introModalBackdrop.addEventListener('click', (event) => {
+            if (event.target === introModalBackdrop) {
+              hideIntroModal();
+            }
+          });
+        }
         document.addEventListener('keydown', (event) => {
-          if (event.key === 'Escape' && mobileSkillSheetBackdrop?.classList.contains('open')) {
+          if (event.key === 'Escape' && mobileSkillSheetBackdrop && mobileSkillSheetBackdrop.classList.contains('open')) {
             closeMobileSkillSheet();
           }
-          if (event.key === 'Escape' && introModalBackdrop?.classList.contains('open')) {
+          if (event.key === 'Escape' && introModalBackdrop && introModalBackdrop.classList.contains('open')) {
             hideIntroModal();
           }
         });
