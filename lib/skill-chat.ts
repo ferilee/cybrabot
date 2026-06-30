@@ -91,7 +91,7 @@ export async function runSkillChat(input: {
 
   if (skill.id === 'grill-me') {
     const ragSkill = getWebSkill('rag-research');
-    const knowledge = getKnowledgeContext(input.message);
+    const knowledge = await getKnowledgeContext(input.message);
 
     if (knowledge.context) {
       externalContext +=
