@@ -762,6 +762,11 @@ async function answerActiveDocumentQuestion(ctx: any, question: string, startedA
 
 function shouldTreatAsDocumentSendRequest(text: string) {
   const lower = text.toLowerCase();
+  
+  if (/\b(markdown|md|pdf|docx|word|xlsx|excel)\b/.test(lower)) {
+    return false;
+  }
+
   return (
     lower.includes('kirim file') ||
     lower.includes('kirim dokumen') ||

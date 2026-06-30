@@ -232,7 +232,11 @@ export function formatTelegramRichCardWithBody(input: {
   }
 
   if (input.bodyHtml) {
-    parts.push(input.bodyHtml);
+    if (input.bodyHtml.length > 600) {
+      parts.push(`\n<blockquote expandable>\n${input.bodyHtml}\n</blockquote>`);
+    } else {
+      parts.push(input.bodyHtml);
+    }
   }
 
   if (input.footer) {
@@ -265,7 +269,11 @@ export function formatTelegramRichCardWithMarkdown(input: {
   }
 
   if (input.bodyMarkdown) {
-    parts.push(`\n${input.bodyMarkdown}`);
+    if (input.bodyMarkdown.length > 600) {
+      parts.push(`\n**>\n${input.bodyMarkdown.split('\\n').map(line => `**>${line}`).join('\\n')}\n**>`);
+    } else {
+      parts.push(`\n${input.bodyMarkdown}`);
+    }
   }
 
   if (input.footer) {
@@ -582,14 +590,14 @@ export function renderTelegramHtmlFallback(input: string) {
 export function getTelegramDraftStatusHtml(mode: TelegramDraftMode) {
   switch (mode) {
     case 'document':
-      return '<blockquote>Dianyssa sedang membaca dokumen dan menyusun jawaban...</blockquote>';
+      return '<blockquote>📖 Dianyssa sedang membaca dokumen dan menyusun jawaban...</blockquote>';
     case 'photo':
-      return '<blockquote>Dianyssa sedang menganalisis gambar dan menyiapkan respons...</blockquote>';
+      return '<blockquote>👀 Dianyssa sedang menganalisis gambar dan menyiapkan respons...</blockquote>';
     case 'export':
-      return '<blockquote>Dianyssa sedang memproses...</blockquote>';
+      return '<blockquote>⏳ Dianyssa sedang memproses...</blockquote>';
     case 'text':
     default:
-      return '<blockquote>Dianyssa sedang mengetik...</blockquote>';
+      return '<blockquote>✍️ Dianyssa sedang mengetik...</blockquote>';
   }
 }
 
