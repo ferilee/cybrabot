@@ -1857,7 +1857,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <meta name="theme-color" content="#17456f">
-      <title>CybraFeriBot Web Chat</title>
+      <title>Dianyssa Web Chat</title>
       <link rel="icon" type="image/png" href="/assets/favicon.png">
       <link rel="icon" type="image/x-icon" href="/favicon.ico">
       <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -3017,9 +3017,9 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
       <div class="app-shell">
         <aside id="sidebar" class="sidebar glass">
           <div class="brand">
-            <img class="brand-logo" src="/assets/cybrabot-logo.png" alt="CybraFeriBot logo">
+            <img class="brand-logo" src="/assets/DianyssaBot.webp" alt="Dianyssa logo">
             <div>
-              <strong>CybraFeriBot</strong>
+              <strong>Dianyssa</strong>
               <span><i class="online-dot"></i> Online dan siap ngobrol</span>
             </div>
           </div>
@@ -3068,12 +3068,12 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
               <button id="mobileMenu" class="mobile-menu" type="button" aria-label="Pilih keahlian">Skills</button>
               <div>
                 <h1 id="activeSkillTitle">Auto Skill</h1>
-                <p id="activeSkillDescription">Cybra memilih kemampuan yang paling cocok.</p>
+                <p id="activeSkillDescription">Dianyssa memilih kemampuan yang paling cocok.</p>
               </div>
             </div>
             <div class="header-actions">
               <span id="modelStatus" class="model-pill">Model otomatis</span>
-              <button id="introButton" class="icon-button" type="button" title="Tentang CybraFeriBot" aria-label="Tentang CybraFeriBot">
+              <button id="introButton" class="icon-button" type="button" title="Tentang Dianyssa" aria-label="Tentang Dianyssa">
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M12 16v-4m0-4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -3083,9 +3083,9 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           </header>
           <section id="messages" class="messages" aria-live="polite">
             <div id="welcome" class="welcome">
-              <img class="welcome-logo" src="/assets/cybrabot-logo.png" alt="CybraFeriBot logo">
+              <img class="welcome-logo" src="/assets/DianyssaBot.webp" alt="Dianyssa logo">
               <h2>Mau bikin apa hari ini?</h2>
-              <p>Tanya, riset, susun dokumen, atau bedah masalah teknis. Cybra siap membantu tanpa meminta kopi, setidaknya untuk sekarang.</p>
+              <p>Tanya, riset, susun dokumen, atau bedah masalah teknis. Dianyssa siap membantu tanpa meminta kopi, setidaknya untuk sekarang.</p>
               <div class="suggestions">
                 <button class="suggestion" type="button">Ringkas topik pelajaran</button>
                 <button class="suggestion" type="button">Buat rancangan dokumen</button>
@@ -3095,7 +3095,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           </section>
           <footer class="composer-wrap">
             <form id="chatForm" class="composer">
-              <textarea id="messageInput" rows="1" placeholder="Tulis sesuatu untuk Cybra..." autocomplete="off" aria-label="Pesan"></textarea>
+              <textarea id="messageInput" rows="1" placeholder="Tulis sesuatu untuk Dianyssa..." autocomplete="off" aria-label="Pesan"></textarea>
               <button id="sendButton" class="send-button" type="submit" aria-label="Kirim pesan">
                 <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3164,10 +3164,10 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
       <div id="introModalBackdrop" class="intro-modal-backdrop" aria-hidden="true">
         <div class="intro-modal" role="dialog" aria-modal="true" aria-labelledby="introModalTitle">
           <button id="introModalClose" class="intro-close" type="button" aria-label="Tutup modal">✕</button>
-          <img class="intro-logo" src="/assets/cybrabot-logo.png" alt="Logo CybraFeriBot">
-          <h3 id="introModalTitle">CybraFeriBot</h3>
+          <img class="intro-logo" src="/assets/DianyssaBot.webp" alt="Logo Dianyssa">
+          <h3 id="introModalTitle">Dianyssa</h3>
           <p class="intro-subtitle">
-            Asisten AI untuk belajar, riset, dokumen, dan percakapan teknis. Cybra dirancang agar responsif, rapi, dan langsung bisa dipakai.
+            Asisten AI untuk belajar, riset, dokumen, dan percakapan teknis. Dianyssa dirancang agar responsif, rapi, dan langsung bisa dipakai.
           </p>
           <div class="intro-meta">
             <strong>Pengembang</strong>
@@ -3299,7 +3299,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           input.disabled = remaining <= 0;
           input.placeholder = remaining <= 0
             ? 'Kuota habis. Tunggu reset otomatis.'
-            : 'Tulis sesuatu untuk Cybra...';
+            : 'Tulis sesuatu untuk Dianyssa...';
         }
 
         function loadStoredHistory() {
@@ -3530,7 +3530,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             avatar.innerHTML = '<img src="' + escapeHtml(userAvatarUrl) + '" alt="User avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,0.78);box-shadow:0 10px 26px rgba(5,19,31,0.35);background:rgba(255,255,255,0.08);">';
           } else {
             avatar.className = 'avatar';
-            avatar.textContent = role === 'user' ? userAvatarInitial : 'C';
+            avatar.textContent = role === 'user' ? userAvatarInitial : 'D';
           }
           const bubble = document.createElement('div');
           bubble.className = 'bubble';
@@ -3538,7 +3538,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
             hour: '2-digit',
             minute: '2-digit',
           }).format(new Date());
-          const label = role === 'user' ? 'Kamu' : 'Cybra';
+          const label = role === 'user' ? 'Kamu' : 'Dianyssa';
           const detail = meta.skillTitle || meta.route || '';
           const contentHtml = renderRichContent(content);
           bubble.innerHTML =
@@ -3571,8 +3571,8 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           el.id = 'typingMessage';
           el.className = 'message-row assistant typing';
           el.innerHTML =
-            '<div class="avatar">C</div><div class="bubble">' +
-            '<div class="message-meta"><strong>Cybra</strong><span>sedang meracik jawaban</span></div>' +
+            '<div class="avatar">D</div><div class="bubble">' +
+            '<div class="message-meta"><strong>Dianyssa</strong><span>sedang meracik jawaban</span></div>' +
             '<div class="typing-dots"><span></span><span></span><span></span></div></div>';
           messages.appendChild(el);
           messages.scrollTop = messages.scrollHeight;
@@ -3641,7 +3641,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           state.selectedSkillId = skillId;
           const selected = state.skills.find((skill) => skill.id === skillId);
           activeSkillTitle.textContent = selected ? selected.title : 'Auto Skill';
-          activeSkillDescription.textContent = selected ? selected.description : 'Cybra memilih kemampuan yang paling cocok.';
+          activeSkillDescription.textContent = selected ? selected.description : 'Dianyssa memilih kemampuan yang paling cocok.';
           for (const list of [skillList, mobileSkillList]) {
             if (!list) continue;
             for (const button of list.querySelectorAll('button')) {
@@ -3659,7 +3659,7 @@ function renderWebChatPage(session: WebSession, account: NonNullable<Awaited<Ret
           const autoButton = document.createElement('button');
           autoButton.className = 'skill-button' + (state.selectedSkillId ? '' : ' active');
           autoButton.dataset.skillId = '';
-          autoButton.innerHTML = '<strong>✦ Auto Skill <span class="skill-badge">auto</span></strong><span>Biarkan Cybra memilih modul yang sesuai</span>';
+          autoButton.innerHTML = '<strong>✦ Auto Skill <span class="skill-badge">auto</span></strong><span>Biarkan Dianyssa memilih modul yang sesuai</span>';
           autoButton.addEventListener('click', () => selectSkill(''));
           target.appendChild(autoButton);
 
