@@ -97,7 +97,7 @@
           input.disabled = remaining <= 0;
           input.placeholder = remaining <= 0
             ? 'Kuota habis. Tunggu reset otomatis.'
-            : 'Tulis sesuatu untuk Cybra...';
+            : 'Tulis sesuatu untuk Dianyssa...';
         }
 
         function loadStoredHistory() {
@@ -328,7 +328,7 @@
             avatar.innerHTML = '<img src="' + escapeHtml(userAvatarUrl) + '" alt="User avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,0.78);box-shadow:0 10px 26px rgba(5,19,31,0.35);background:rgba(255,255,255,0.08);">';
           } else {
             avatar.className = 'avatar';
-            avatar.textContent = role === 'user' ? userAvatarInitial : 'C';
+            avatar.textContent = role === 'user' ? userAvatarInitial : 'D';
           }
           const bubble = document.createElement('div');
           bubble.className = 'bubble';
@@ -336,7 +336,7 @@
             hour: '2-digit',
             minute: '2-digit',
           }).format(new Date());
-          const label = role === 'user' ? 'Kamu' : 'Cybra';
+          const label = role === 'user' ? 'Kamu' : 'Dianyssa';
           const detail = meta.skillTitle || meta.route || '';
           const contentHtml = renderRichContent(content);
           bubble.innerHTML =
@@ -369,8 +369,8 @@
           el.id = 'typingMessage';
           el.className = 'message-row assistant typing';
           el.innerHTML =
-            '<div class="avatar">C</div><div class="bubble">' +
-            '<div class="message-meta"><strong>Cybra</strong><span>sedang meracik jawaban</span></div>' +
+            '<div class="avatar">D</div><div class="bubble">' +
+            '<div class="message-meta"><strong>Dianyssa</strong><span>sedang meracik jawaban</span></div>' +
             '<div class="typing-dots"><span></span><span></span><span></span></div></div>';
           messages.appendChild(el);
           messages.scrollTop = messages.scrollHeight;
@@ -439,7 +439,7 @@
           state.selectedSkillId = skillId;
           const selected = state.skills.find((skill) => skill.id === skillId);
           activeSkillTitle.textContent = selected ? selected.title : 'Auto Skill';
-          activeSkillDescription.textContent = selected ? selected.description : 'Cybra memilih kemampuan yang paling cocok.';
+          activeSkillDescription.textContent = selected ? selected.description : 'Dianyssa memilih kemampuan yang paling cocok.';
           for (const list of [skillList, mobileSkillList]) {
             if (!list) continue;
             for (const button of list.querySelectorAll('button')) {
@@ -457,7 +457,7 @@
           const autoButton = document.createElement('button');
           autoButton.className = 'skill-button' + (state.selectedSkillId ? '' : ' active');
           autoButton.dataset.skillId = '';
-          autoButton.innerHTML = '<strong>✦ Auto Skill <span class="skill-badge">auto</span></strong><span>Biarkan Cybra memilih modul yang sesuai</span>';
+          autoButton.innerHTML = '<strong>✦ Auto Skill <span class="skill-badge">auto</span></strong><span>Biarkan Dianyssa memilih modul yang sesuai</span>';
           autoButton.addEventListener('click', () => selectSkill(''));
           target.appendChild(autoButton);
 
