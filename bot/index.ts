@@ -1763,7 +1763,16 @@ bot.command('agent', async (ctx) => {
     return;
   }
 
-  const prompt = ctx.message!.text.replace(/^\/agent(@\w+)?/i, '').trim();
+  let prompt = ctx.message!.text.replace(/^\/agent(@\w+)?/i, '').trim();
+
+  if (ctx.message?.reply_to_message) {
+    const replyTo = ctx.message.reply_to_message;
+    const repliedText = replyTo.text || replyTo.caption;
+    if (repliedText) {
+      prompt += `\n\n[Konteks pesan yang di-reply:\n${repliedText}\n]`;
+    }
+  }
+
   if (!prompt) {
     await replySafely(ctx, 'Format: <b>/agent [perintah atau pertanyaan]</b>\nContoh: <i>/agent tolong cek daftar file di dalam folder /tmp</i>');
     return;
