@@ -211,6 +211,9 @@ Berikan jawaban akhir yang sangat jelas dan terstruktur dengan Markdown.`,
         // Send tool result back to model
         currentPrompt = `Tool ${functionName} returned:\n${toolResult}`;
         turnCount++;
+        
+        // Jeda 3 detik untuk mencegah limit 20 RPM (Free Tier)
+        await new Promise(resolve => setTimeout(resolve, 3000));
       } else {
         // No function call, we have a final answer
         const textResponse = response.text || "Tidak ada jawaban dari agent.";
