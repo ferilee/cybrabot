@@ -58,6 +58,16 @@ async function searchWeb(query: string): Promise<string> {
   }
 }
 
+// Tool 4: write_file
+async function writeFile(filePath: string, content: string): Promise<string> {
+  try {
+    await fs.writeFile(filePath, content, 'utf-8');
+    return `Successfully wrote ${content.length} characters to ${filePath}`;
+  } catch (error: any) {
+    return `Error writing file: ${error.message}`;
+  }
+}
+
 const functionDeclarations = [
   {
     name: 'execute_bash',
@@ -100,17 +110,53 @@ const functionDeclarations = [
       },
       required: ['query'],
     },
+  },
+  {
+    name: 'write_file',
+    description: 'Write string content to a file on the file system. Use this to create or overwrite scripts, documents, or code files.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        file_path: {
+          type: Type.STRING,
+          description: 'The absolute or relative path to the file.',
+        },
+        content: {
+          type: Type.STRING,
+          description: 'The exact string content to write to the file.',
+        }
+      },
+      required: ['file_path', 'content'],
+    },
+  },
+  {
+    name: 'send_telegram_document',
+    description: 'Send a file to the user via Telegram. Use this after you have successfully generated, written, and verified a file.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        file_path: {
+          type: Type.STRING,
+          description: 'The path to the local file to send.',
+        },
+        caption: {
+          type: Type.STRING,
+          description: 'An optional caption for the file.',
+        }
+      },
+      required: ['file_path'],
+    },
   }
 ];
 
-export async function runAgentLoop(prompt: string, updateStatus?: (msg: string) => void): Promise<{ text: string, html: string }> {
+export async function runAgentLoop(prompt: string, updateStatus?: (msg: string) => void, sendDocument?: (path: string, caption?: string) => Promise<void>): Promise<{ text: string, html: string }> {
   try {
     const chat = client.chats.create({
       model: agentModel,
       config: {
         systemInstruction: `Kamu adalah Dianyssa dalam mode "Autonomous Agent". 
-Kamu memiliki akses ke terminal (execute_bash), file system (read_file), dan internet (search_web).
-Kamu harus menyelesaikan permintaan user secara mandiri.
+Kamu memiliki akses ke terminal (execute_bash), file system (read_file, write_file), internet (search_web), dan kemampuan mengirim file ke Telegram (send_telegram_document).
+Kamu harus menyelesaikan permintaan user secara mandiri (mulai dari menulis code, run test, install dependencies, debugging, hingga mengirim hasil final).
 Gunakan tools yang tersedia untuk mengumpulkan informasi atau menjalankan aksi.
 Selalu berpikir langkah demi langkah.
 Berikan jawaban akhir yang sangat jelas dan terstruktur dengan Markdown.`,
@@ -120,7 +166,7 @@ Berikan jawaban akhir yang sangat jelas dan terstruktur dengan Markdown.`,
 
     let currentPrompt = prompt;
     let turnCount = 0;
-    const maxTurns = 5;
+    const maxTurns = 15;
 
     while (turnCount < maxTurns) {
       if (updateStatus) {
@@ -145,6 +191,21 @@ Berikan jawaban akhir yang sangat jelas dan terstruktur dengan Markdown.`,
         } else if (functionName === 'search_web') {
           if (updateStatus) updateStatus(`Mencari di web: ${args.query}`);
           toolResult = await searchWeb(args.query);
+        } else if (functionName === 'write_file') {
+          if (updateStatus) updateStatus(`Menulis file: ${args.file_path}`);
+          toolResult = await writeFile(args.file_path, args.content);
+        } else if (functionName === 'send_telegram_document') {
+          if (updateStatus) updateStatus(`Mengirim dokumen: ${args.file_path}`);
+          if (sendDocument) {
+            try {
+              await sendDocument(args.file_path, args.caption);
+              toolResult = 'Document sent successfully.';
+            } catch (e: any) {
+              toolResult = `Failed to send document: ${e.message}`;
+            }
+          } else {
+            toolResult = 'sendDocument callback is not available in this context.';
+          }
         }
 
         // Send tool result back to model

@@ -1783,8 +1783,12 @@ bot.command('agent', async (ctx) => {
     }
   };
 
+  const sendDocument = async (filePath: string, caption?: string) => {
+    await ctx.replyWithDocument(new InputFile(filePath), { caption });
+  };
+
   try {
-    const result = await runAgentLoop(prompt, updateStatus);
+    const result = await runAgentLoop(prompt, updateStatus, sendDocument);
     
     if (updateMessageId) {
       await ctx.api.deleteMessage(ctx.chat.id, updateMessageId).catch(() => {});
