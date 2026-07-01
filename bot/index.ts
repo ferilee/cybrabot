@@ -19,6 +19,7 @@ import { detectPreferenceUpdate, formatPreferenceConfirmation, getUserPreference
 import { getRuntimeResponse } from '../lib/runtime-responses';
 import { runSkillChat } from '../lib/skill-chat';
 import { runLocalTool } from '../lib/tools';
+import { runAgentLoop } from '../lib/agent';
 import { escapeHtml, formatTelegramRichCard, formatTelegramRichCardWithBody, formatTelegramRichText, getTelegramDraftStatusHtml, renderTelegramHtmlFallback, renderTelegramMessageContent, simplifyTelegramRichContent, fixBadMarkdown, formatInlineTelegramRichText } from '../lib/telegram-rich';
 
 const token = process.env.TELEGRAM_BOT_TOKEN || '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
@@ -1755,6 +1756,47 @@ bot.command('admin_self', async (ctx) => {
   });
 
   await replySafely(ctx, `Template <b>${field}</b> berhasil diperbarui.`);
+});
+
+bot.command('agent', async (ctx) => {
+  if (!(await requireOwner(ctx))) {
+    return;
+  }
+
+  const prompt = ctx.message!.text.replace(/^\/agent(@\w+)?/i, '').trim();
+  if (!prompt) {
+    await replySafely(ctx, 'Format: <b>/agent [perintah atau pertanyaan]</b>\nContoh: <i>/agent tolong cek daftar file di dalam folder /tmp</i>');
+    return;
+  }
+
+  let updateMessageId: number | null = null;
+  const updateStatus = async (msg: string) => {
+    try {
+      if (!updateMessageId) {
+        const sent = await ctx.reply(`<i>Agent: ${msg}</i>`, { parse_mode: 'HTML' });
+        updateMessageId = sent.message_id;
+      } else {
+        await ctx.api.editMessageText(ctx.chat.id, updateMessageId, `<i>Agent: ${msg}</i>`, { parse_mode: 'HTML' });
+      }
+    } catch (e) {
+      // Ignore edit errors
+    }
+  };
+
+  try {
+    const result = await runAgentLoop(prompt, updateStatus);
+    
+    if (updateMessageId) {
+      await ctx.api.deleteMessage(ctx.chat.id, updateMessageId).catch(() => {});
+    }
+
+    await replySafely(ctx, result.html);
+  } catch (error: any) {
+    if (updateMessageId) {
+      await ctx.api.deleteMessage(ctx.chat.id, updateMessageId).catch(() => {});
+    }
+    await replySafely(ctx, `❌ Gagal mengeksekusi agent:\n<pre>${escapeHtml(error.message || String(error))}</pre>`);
+  }
 });
 
 bot.command('model', async (ctx) => {
