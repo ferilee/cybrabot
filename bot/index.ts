@@ -1792,8 +1792,10 @@ bot.command('agent', async (ctx) => {
     }
   };
 
+  let documentSent = false;
   const sendDocument = async (filePath: string, caption?: string) => {
     await ctx.replyWithDocument(new InputFile(filePath), { caption });
+    documentSent = true;
   };
 
   try {
@@ -1803,7 +1805,10 @@ bot.command('agent', async (ctx) => {
       await ctx.api.deleteMessage(ctx.chat.id, updateMessageId).catch(() => {});
     }
 
-    await replySafely(ctx, result.html);
+    // Hanya kirim ringkasan akhir kalau agent TIDAK mengirimkan dokumen/file
+    if (!documentSent) {
+      await replySafely(ctx, result.html);
+    }
   } catch (error: any) {
     if (updateMessageId) {
       await ctx.api.deleteMessage(ctx.chat.id, updateMessageId).catch(() => {});
@@ -2057,7 +2062,7 @@ bot.on('message:document', async (ctx) => {
       !mimeType.startsWith('text/')
     )
   ) {
-    await replySafely(ctx, 'Saat ini saya hanya mendukung file <b>PDF</b>, <b>gambar</b>, <b>DOCX</b>, <b>XLSX</b>, atau <b>MD/TXT</b>.');
+    await replySafely(ctx, 'Waduh, saat ini gue cuma bisa baca file <b>PDF</b>, <b>gambar</b>, <b>DOCX</b>, <b>XLSX</b>, atau <b>MD/TXT</b> ya bang.');
     return;
   }
   if (fileSize > MAX_DOCUMENT_BYTES) {
